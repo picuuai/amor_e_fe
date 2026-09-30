@@ -22,8 +22,8 @@ async function srcFromProduct(p) {
   studio.srcId++; studio.fromFile = false; studio.fotoId = null; studio.px = studio.py = 0; studio.zoom = 100;
 }
 async function srcFromGaleria(id) {
-  const b = await FotoDB.get('full', id);
-  if (!b) { toast('Foto não encontrada na galeria.'); return srcFromProduct(get('produtos', studio.prodId)); }
+  const b = await fotoFull(id);
+  if (!b) { toast('Foto não encontrada (sem internet?).'); return srcFromProduct(get('produtos', studio.prodId)); }
   studio.src = await blobToImage(b);
   studio.srcId++; studio.fromFile = true; studio.fotoId = id; studio.px = studio.py = 0; studio.zoom = 100;
 }
@@ -573,6 +573,8 @@ function oferecerMarcar() {
 
 async function publicarInstagram(cv, btn) {
   const s = studio;
+  // no celular o próprio app do Instagram recebe a imagem pela janela de compartilhar
+  if (matchMedia('(pointer: coarse)').matches) { await compartilharPost(cv); oferecerMarcar(); return; }
   if (s.formato === 'story') { toast('Stories só podem ser publicados pelo celular. Use “Compartilhar” ou “Baixar”.'); return; }
   const st = await postadorStatus();
   if (!st || st.logado === false) {

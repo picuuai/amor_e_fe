@@ -22,6 +22,8 @@ const FotoDB = (() => {
   return {
     put: (store, k, v) => tx(store, 'readwrite', s => s.put(v, k)),
     get: (store, k) => tx(store, 'readonly', s => s.get(k)),
+    keys: store => tx(store, 'readonly', s => s.getAllKeys()),
+    delStore: (store, k) => tx(store, 'readwrite', s => s.delete(k)),
     del: async k => { await tx('full', 'readwrite', s => s.delete(k)); await tx('thumb', 'readwrite', s => s.delete(k)); },
   };
 })();
@@ -43,6 +45,13 @@ function scaleCanvas(img, max) {
 async function blobToImage(blob) {
   const u = URL.createObjectURL(blob);
   try { return await loadImage(u); } finally { URL.revokeObjectURL(u); }
+}
+
+// foto em alta: se não estiver neste aparelho (veio de outro pela sincronização), baixa agora
+async function fotoFull(id) {
+  const b = await FotoDB.get('full', id);
+  if (b || typeof Sync === 'undefined' || !Sync.ativo()) return b;
+  try { return await Sync.baixarFoto(id, 'full'); } catch { return null; }
 }
 
 const thumbURLs = new Map();
@@ -180,9 +189,9 @@ function formFoto(f) {
       root.addEventListener('click', async e => {
         const t = e.target.closest('[data-f]'); if (!t) return;
         if (t.dataset.f === 'pub') { dlg.close(); ACTIONS.galPublicar(f.id); }
-        if (t.dataset.f === 'baixar') { const b = await FotoDB.get('full', f.id); if (b) download(`terco-${slug(nomeProduto(f.produtoId))}-${f.data}.jpg`, b, 'image/jpeg'); }
+        if (t.dataset.f === 'baixar') { const b = await fotoFull(f.id); if (b) download(`terco-${slug(nomeProduto(f.produtoId))}-${f.data}.jpg`, b, 'image/jpeg'); }
         if (t.dataset.f === 'cadastro') {
-          const b = await FotoDB.get('full', f.id); if (!b) return;
+          const b = await fotoFull(f.id); if (!b) return;
           const img = await blobToImage(b), side = Math.min(img.width, img.height), out = Math.min(520, side);
           const c = document.createElement('canvas'); c.width = c.height = out;
           c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
@@ -191,7 +200,7 @@ function formFoto(f) {
           if (save()) toast(`Foto definida para ${p.nome}.`); else p.foto = antes;
         }
       });
-      const b = await FotoDB.get('full', f.id);
+      const b = await fotoFull(f.id);
       if (b) { const u = URL.createObjectURL(b), img = $('#gFull', root); img.onload = () => URL.revokeObjectURL(u); img.src = u; }
     },
     onSave: root => {

@@ -155,7 +155,11 @@ function load() {
   return db;
 }
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(db)); return true; }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(db));
+    if (typeof Sync !== 'undefined') Sync.alterado(); // envia para a nuvem, se estiver conectado
+    return true;
+  }
   catch (e) { toast('Não foi possível salvar (memória cheia?). Tente fotos menores.'); return false; }
 }
 
@@ -286,7 +290,8 @@ const ROUTES = {
   divulgar: ['Criar post para o Instagram', () => viewDivulgar(), 'galeria'],
   produtos: ['Produtos e preços', viewProdutos, 'mais'], insumos: ['Insumos', viewInsumos, 'mais'],
   compras: ['Compras de insumos', viewCompras, 'mais'], clientes: ['Clientes', viewClientes, 'mais'],
-  config: ['Configurações', viewConfig, 'mais'], instagram: ['Instagram', () => viewInstagram(), 'mais'], backup: ['Backup e exportação', viewBackup, 'mais'],
+  config: ['Configurações', viewConfig, 'mais'], instagram: ['Instagram', () => viewInstagram(), 'mais'],
+  sync: ['Computador e celular', () => Sync.view(), 'mais'], backup: ['Backup e exportação', viewBackup, 'mais'],
 };
 const state = { mesInicio: today().slice(0, 7), mesVendas: today().slice(0, 7), filtroVendas: 'todas' };
 
@@ -308,6 +313,7 @@ function render() {
   if (r === 'divulgar') initStudio();
   if (r === 'galeria') initGaleria();
   if (r === 'instagram') refreshIg();
+  if (typeof Sync !== 'undefined') Sync.pintar();
 }
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 const topActions = html => { $('#topAct').innerHTML = html; };
@@ -372,7 +378,7 @@ function viewInicio() {
   return `
   <section class="hero">
     <div class="hero-txt">
-      <div class="hero-hi">${saudacao()}! Aqui está o resumo de</div>
+      <div class="hero-hi">${saudacao()}! Aqui está o resumo de <a class="sync sync-badge hero-sync" href="#sync"></a></div>
       <h2>${esc(db.params.nome || 'Terços')}</h2>
       <label class="hero-month">${ic('calendar')}<input type="month" value="${m}" data-chg="mesInicio" aria-label="Mês"></label>
     </div>
@@ -662,6 +668,7 @@ function viewMais() {
     ${t('insumos', 'layers', 't-gold', 'Insumos', `${db.insumos.length} materiais cadastrados`)}
     ${t('compras', 'cart', 't-blue', 'Compras de insumos', `${db.compras.length} compras registradas`)}
     ${t('clientes', 'users', 't-rose', 'Clientes', `${db.clientes.length} clientes`)}
+    ${t('sync', 'refresh', 't-blue', 'Computador e celular', typeof Sync !== 'undefined' && Sync.ativo() ? 'Sincronização ligada' : 'Usar nos dois ao mesmo tempo')}
     ${t('instagram', 'instagram', 't-rose', 'Instagram', 'Conta conectada, entrar e sair')}
     ${t('config', 'sliders', 't-ok', 'Configurações', 'Margem, mão de obra, taxas, tema')}
     ${t('backup', 'shield', backupAtrasado() ? 't-warn' : 't-ok', 'Backup e exportação', db.meta.ultimoBackup ? 'Último em ' + fdate(db.meta.ultimoBackup) : 'Nenhum backup ainda')}
@@ -1032,7 +1039,8 @@ const ACTIONS = {
     download(`produtos-${today()}.csv`, csv(rows), 'text/csv;charset=utf-8');
   },
   reset: () => {
-    if (!confirm('Apagar TODOS os dados e voltar ao início? Isso não pode ser desfeito.')) return;
+    const nuvem = typeof Sync !== 'undefined' && Sync.ativo() ? '\n\nATENÇÃO: com a sincronização ligada, isso também apaga na nuvem e nos outros aparelhos.' : '';
+    if (!confirm('Apagar TODOS os dados e voltar ao início? Isso não pode ser desfeito.' + nuvem)) return;
     seed(); save(); location.hash = 'inicio'; render(); toast('Dados reiniciados.');
   },
 };
@@ -1045,6 +1053,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#dlgX').innerHTML = ic('x');
   applyTheme();
   load();
+  if (typeof Sync !== 'undefined') Sync.init(); // antes do render: trata o link do QR Code (#conectar=…)
   render();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});

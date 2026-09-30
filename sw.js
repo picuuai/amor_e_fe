@@ -1,6 +1,8 @@
 // Cache do app para funcionar offline. Aumente a versão ao publicar mudanças.
-const CACHE = 'tercos-v4';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'galeria.js', 'studio.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'tercos-v5';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'galeria.js', 'studio.js', 'sync.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+// Só guarda os arquivos do próprio app e as fontes. Nunca o GitHub (dados) nem o postador.
+const CACHEAVEL = [self.location.origin, 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -10,7 +12,7 @@ self.addEventListener('activate', e => {
 });
 // Rede primeiro (pega atualizações), cache se estiver offline.
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
+  if (e.request.method !== 'GET' || !CACHEAVEL.includes(new URL(e.request.url).origin)) return;
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' }).then(r => {
       const copy = r.clone();

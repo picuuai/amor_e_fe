@@ -292,6 +292,16 @@ details{margin:4px 0 8px}
 summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--pri);margin-bottom:10px}
 .btn:disabled{opacity:.55;cursor:progress}
 
+/* sincronização */
+.steps{margin:0;padding-left:22px;line-height:1.7}
+.steps li{margin-bottom:12px}
+.steps li .btn{margin-left:6px;vertical-align:middle}
+.qr{display:flex;justify-content:center}
+.qr svg{width:min(280px,70vw);height:auto;background:#fff;padding:10px;border-radius:14px}
+.hero-sync{display:inline-flex;margin-left:6px;padding:3px 10px;font-size:12px;vertical-align:middle;background:rgba(255,255,255,.18)!important;color:#fff!important}
+.hero-sync .i{width:14px;height:14px}
+.hero-sync:not(.ok):not(.sending):not(.pending):not(.error):not(.offline){display:none}
+
 /* diálogo */
 dialog{border:0;border-radius:22px;padding:0;width:min(680px,calc(100vw - 24px));max-height:calc(100vh - 32px);background:var(--card);color:var(--ink);box-shadow:0 30px 80px rgba(10,5,30,.35)}
 dialog::backdrop{background:rgba(20,12,40,.5);backdrop-filter:blur(3px)}
