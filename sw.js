@@ -1,5 +1,5 @@
 // Cache do app para funcionar offline. Aumente a versão ao publicar mudanças.
-const CACHE = 'tercos-v3';
+const CACHE = 'tercos-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'galeria.js', 'studio.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

@@ -86,7 +86,8 @@ function marcarPublicada(id) {
 
 /* ---------- tela ---------- */
 function viewGaleria() {
-  topActions(`<label class="btn pri" style="margin:0">${ic('upload')}Enviar fotos<input type="file" id="galUp" accept="image/*" multiple hidden></label>`);
+  const sel = state.galSel;
+  topActions(sel ? '' : `<button class="btn" data-act="galSelecionar">${ic('check')}Selecionar</button><label class="btn pri" style="margin:0">${ic('upload')}Enviar fotos<input type="file" id="galUp" accept="image/*" multiple hidden></label>`);
   let fs = galeria().filter(f => !state.galProd || f.produtoId === state.galProd);
   const n = {
     nova: fs.filter(f => f.status === 'nova').length, todas: fs.filter(f => f.status !== 'arquivada').length,
@@ -96,7 +97,16 @@ function viewGaleria() {
   fs = k === 'todas' ? fs.filter(f => f.status !== 'arquivada') : fs.filter(f => f.status === k);
   fs.sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   const chip = (key, l) => `<button class="chip ${k === key ? 'on' : ''}" data-act="galFiltro" data-id="${key}">${l} <span class="muted">${n[key]}</span></button>`;
+  state._galVisiveis = fs.map(f => f.id);
   return `
+  ${sel ? `<div class="selbar">
+    <b>${sel.size} selecionada(s)</b>
+    <button class="btn sm" data-act="galSelTodas">Selecionar todas</button>
+    <span class="grow"></span>
+    <button class="btn sm" data-act="galArquivarSel" ${sel.size ? '' : 'disabled'}>Arquivar</button>
+    <button class="btn sm danger" data-act="galApagarSel" ${sel.size ? '' : 'disabled'}>${ic('trash')}Apagar</button>
+    <button class="btn sm ghost" data-act="galSelecionar">Cancelar</button>
+  </div>` : ''}
   <div class="bar">
     <div class="chips" style="margin:0">${chip('nova', 'Não publicadas')}${chip('publicada', 'Publicadas')}${chip('todas', 'Todas')}${chip('arquivada', 'Arquivadas')}</div>
     <span class="grow"></span>
@@ -105,12 +115,17 @@ function viewGaleria() {
   ${fs.length ? `<div class="ggrid">${fs.map(f => {
     const [l, t] = STATUS_G[f.status] || STATUS_G.nova;
     const recente = f.status === 'nova' && daysBetween(f.data, today()) <= 7;
-    return `<div class="gcard">
-      <button class="gimg" data-act="galAbrir" data-id="${f.id}" aria-label="Abrir foto"><img data-thumb="${f.id}" alt="">
-        <span class="gtags">${recente ? '<span class="tag">Recente</span>' : ''}<span class="tag ${t}">${f.status === 'publicada' ? 'Publicada ' + fdate(f.publicadaEm).slice(0, 5) : l}</span></span></button>
+    const marcada = sel?.has(f.id);
+    return `<div class="gcard ${marcada ? 'sel' : ''}">
+      <button class="gimg" data-act="${sel ? 'galToggle' : 'galAbrir'}" data-id="${f.id}" aria-label="${sel ? 'Selecionar foto' : 'Abrir foto'}"><img data-thumb="${f.id}" alt="">
+        <span class="gtags">${recente ? '<span class="tag">Recente</span>' : ''}<span class="tag ${t}">${f.status === 'publicada' ? 'Publicada ' + fdate(f.publicadaEm).slice(0, 5) : l}</span></span>
+        ${sel ? `<span class="gcheck">${marcada ? ic('check') : ''}</span>` : ''}</button>
       <div class="gbody"><div class="li-t">${esc(nomeProduto(f.produtoId))}</div>
         <div class="li-s">${fdate(f.data)}${f.vezes ? ` · ${f.vezes} post(s)` : ''}${f.obs ? ' · ' + esc(f.obs) : ''}</div>
-        <button class="btn sm ${f.status === 'nova' ? 'pri' : ''}" data-act="galPublicar" data-id="${f.id}">${ic('instagram')}${f.status === 'publicada' ? 'Publicar de novo' : 'Publicar'}</button></div>
+        <div class="gacts">
+          <button class="btn sm ${f.status === 'nova' ? 'pri' : ''}" data-act="galPublicar" data-id="${f.id}">${ic('instagram')}${f.status === 'publicada' ? 'Publicar de novo' : 'Publicar'}</button>
+          <button class="btn sm rmfoto" data-act="galApagar" data-id="${f.id}" aria-label="Apagar foto" title="Apagar foto">${ic('trash')}</button>
+        </div></div>
     </div>`;
   }).join('')}</div>`
     : empty('image', k === 'nova' ? 'Nenhuma foto esperando publicação' : 'Nenhuma foto aqui', 'Envie as fotos dos terços produzidos em “Enviar fotos”.')}`;
@@ -184,16 +199,38 @@ function formFoto(f) {
       if (st === 'publicada' && f.status !== 'publicada') { f.publicadaEm ||= today(); f.vezes ||= 1; }
       Object.assign(f, { produtoId: F(root, 'prod'), status: st, obs: F(root, 'obs').trim() });
     },
-    onDelete: () => {
-      db.galeria = galeria().filter(x => x !== f);
-      FotoDB.del(f.id); thumbURLs.delete(f.id);
-      if (studio.fotoId === f.id) { studio.fotoId = null; studio.src = null; }
-    },
+    onDelete: () => { removerFotos([f.id]); },
   });
+}
+
+function removerFotos(ids) {
+  const set = new Set(ids);
+  db.galeria = galeria().filter(x => !set.has(x.id));
+  for (const id of ids) { FotoDB.del(id); thumbURLs.delete(id); }
+  if (set.has(studio.fotoId)) { studio.fotoId = null; studio.src = null; }
+}
+function apagarFotos(ids) {
+  if (!ids.length) return;
+  if (!confirm(`Apagar ${ids.length === 1 ? 'esta foto' : ids.length + ' fotos'}? Isso não pode ser desfeito.`)) return;
+  removerFotos(ids);
+  state.galSel = null;
+  save(); render();
+  toast(ids.length === 1 ? 'Foto apagada.' : `${ids.length} fotos apagadas.`);
 }
 
 Object.assign(ACTIONS, {
   galFiltro: k => { state.galFiltro = k; render(); },
+  galApagar: id => apagarFotos([id]),
+  galSelecionar: () => { state.galSel = state.galSel ? null : new Set(); render(); },
+  galToggle: id => { const s = state.galSel; s.has(id) ? s.delete(id) : s.add(id); render(); },
+  galSelTodas: () => { const s = state.galSel, vis = state._galVisiveis || []; if (vis.every(id => s.has(id))) s.clear(); else vis.forEach(id => s.add(id)); render(); },
+  galApagarSel: () => apagarFotos([...state.galSel]),
+  galArquivarSel: () => {
+    const s = state.galSel;
+    for (const f of galeria()) if (s.has(f.id)) f.status = 'arquivada';
+    toast(`${s.size} foto(s) arquivada(s).`);
+    state.galSel = null; save(); render();
+  },
   galAbrir: id => { const f = galeria().find(x => x.id === id); if (f) formFoto(f); },
   galPublicar: id => {
     const f = galeria().find(x => x.id === id); if (!f) return;

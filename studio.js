@@ -337,7 +337,7 @@ function viewDivulgar() {
         <button class="btn" data-s="copy">${ic('copy')}Copiar legenda</button>
       </div>
       <div id="pubStatus"></div>
-      <div class="st-postador" id="stPostador"></div>
+      <div class="ig-box compacto" style="margin-top:12px"></div>
     </div></div>
     <div class="st-ctrl">
       <div class="card"><div class="card-h">${ic('camera')}<h3>1. Foto</h3></div>
@@ -501,11 +501,68 @@ async function postadorStatus() {
     return r.ok ? await r.json() : null;
   } catch { return null; }
 }
-async function mostrarPostador() {
-  const el = $('#stPostador'); if (!el) return;
+/* quadro de status da conta (usado em Cadastros > Instagram e no estúdio) */
+function igBoxHTML(st, compacto = false) {
+  if (!st) return `<div class="alert warn">${ic('alert')}<div><b>Postador desligado.</b> Ele é o programa que publica por você neste computador.
+    Na pasta <b>postador-instagram</b> (no OneDrive, em ELISA FERREIRA DE JESUS), clique duas vezes em <b>LIGAR_POSTADOR (so uma vez)</b>.
+    Depois disso ele liga sozinho sempre que o computador iniciar.</div></div>
+    <div class="bar"><button class="btn" data-ig="recheck">${ic('refresh')}Verificar de novo</button></div>`;
+  const oc = st.ocupado;
+  let msg;
+  if (oc === 'login') msg = `<div class="alert info">${ic('instagram')}<div><b>Abrimos o Instagram numa janela.</b> Entre na conta por lá — ela fecha sozinha quando terminar.</div></div>`;
+  else if (oc === 'publicar') msg = `<div class="alert info">${ic('refresh')}<div>Publicando um post… não mexa na janela do Instagram.</div></div>`;
+  else if (oc === 'sair') msg = `<div class="alert info">${ic('refresh')}<div>Saindo da conta…</div></div>`;
+  else if (st.logado === true) msg = `<div class="alert ok">${ic('check')}<div><b>Instagram conectado${st.usuario ? ` como @${esc(st.usuario)}` : ''}.</b>${compacto ? '' : ' Já está tudo pronto para publicar.'}</div></div>`;
+  else if (st.logado === false) msg = `<div class="alert warn">${ic('alert')}<div><b>Instagram não conectado.</b> Clique em “Entrar no Instagram”.</div></div>`;
+  else msg = `<div class="alert info">${ic('refresh')}<div>Verificando a conta do Instagram…</div></div>`;
+  const dis = oc ? 'disabled' : '';
+  const btns = st.logado === true
+    ? (compacto ? '' : `<button class="btn" data-ig="verificar" ${dis}>${ic('refresh')}Verificar de novo</button><button class="btn" data-ig="trocar" ${dis}>Trocar de conta</button><button class="btn danger" data-ig="sair" ${dis}>Sair da conta</button>`)
+    : `<button class="btn pri" data-ig="login" ${dis}>${ic('instagram')}Entrar no Instagram</button>`;
+  return msg + (btns ? `<div class="bar" style="margin:0">${btns}</div>` : '');
+}
+let igTimer = 0;
+async function refreshIg() {
+  clearTimeout(igTimer);
+  const boxes = $$('.ig-box'); if (!boxes.length) return;
   const st = await postadorStatus();
-  el.innerHTML = st ? `<span class="tag ok">${ic('check')}Postador ligado — publicação automática disponível</span>`
-    : `<span class="tag warn">${ic('alert')}Postador desligado — abra o “2_iniciar_postador” no computador</span>`;
+  for (const b of $$('.ig-box')) b.innerHTML = igBoxHTML(st, b.classList.contains('compacto'));
+  // continua acompanhando enquanto a tela estiver aberta (mais rápido se algo estiver em andamento)
+  igTimer = setTimeout(refreshIg, st?.ocupado ? 2000 : 8000);
+}
+const mostrarPostador = refreshIg;
+async function igPost(caminho, corpo = {}) {
+  const r = await fetch(POSTADOR + caminho, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+  return r.json();
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-ig]'); if (!b) return;
+  const a = b.dataset.ig;
+  try {
+    if (a === 'login' || a === 'trocar') {
+      const j = await igPost('/login', { trocar: a === 'trocar' });
+      if (j.jaLogado) toast(`Você já está conectado${j.usuario ? ' como @' + j.usuario : ''}.`);
+      else toast('Abrimos o Instagram numa janela: entre na conta por lá.');
+    }
+    if (a === 'sair') {
+      if (!confirm('Desconectar a conta do Instagram deste computador?')) return;
+      await igPost('/sair');
+    }
+    if (a === 'verificar') await igPost('/verificar');
+  } catch { toast('Não consegui falar com o postador. Ele está ligado?'); }
+  refreshIg();
+});
+
+function viewInstagram() {
+  return `<div class="card"><div class="card-h">${ic('instagram')}<h3>Conta do Instagram</h3></div>
+      <div class="ig-box"><div class="alert info">${ic('refresh')}<div>Verificando…</div></div></div></div>
+    <div class="card"><div class="card-h">${ic('sparkles')}<h3>Como funciona</h3></div>
+      <ol style="margin:0;padding-left:20px;line-height:1.9">
+        <li>Um pequeno programa (o <b>postador</b>) fica ligado neste computador e publica por você.</li>
+        <li>Clique em <b>Entrar no Instagram</b> uma vez — o login fica salvo.</li>
+        <li>Na <a href="#galeria">Galeria</a>, toque em <b>Publicar</b> numa foto e depois em <b>Publicar no Instagram</b>.</li>
+      </ol>
+      <p class="hint" style="margin:12px 0 0">Poste num ritmo normal (poucos posts por dia): publicação automática não é incentivada pelo Instagram.</p></div>`;
 }
 function setPub(html, tone = 'info') { const el = $('#pubStatus'); if (el) el.innerHTML = html ? `<div class="alert ${tone}" style="margin:12px 0 0">${html}</div>` : ''; }
 // depois de postar "na mão" (compartilhar/baixar), oferece marcar a foto da galeria como publicada
@@ -518,23 +575,18 @@ async function publicarInstagram(cv, btn) {
   const s = studio;
   if (s.formato === 'story') { toast('Stories só podem ser publicados pelo celular. Use “Compartilhar” ou “Baixar”.'); return; }
   const st = await postadorStatus();
-  if (!st) {
+  if (!st || st.logado === false) {
     modal({
-      title: 'Postador desligado',
-      body: `<div class="alert warn">${ic('alert')}<div>Para publicar automático, o postador precisa estar aberto neste computador.</div></div>
-        <ol style="margin:0 0 12px;padding-left:20px;line-height:1.8">
-          <li>Abra a pasta <b>postador-instagram</b> (em ELISA FERREIRA DE JESUS, no OneDrive).</li>
-          <li>Primeira vez: clique duas vezes em <b>1_login_instagram.bat</b> e entre na conta.</li>
-          <li>Clique duas vezes em <b>2_iniciar_postador.bat</b> e deixe a janela aberta.</li>
-          <li>Volte aqui e clique em <b>Publicar no Instagram</b> de novo.</li>
-        </ol>
-        <p class="hint">Ou publique manualmente: o botão abaixo baixa a imagem, copia a legenda e abre o Instagram.</p>
+      title: !st ? 'Postador desligado' : 'Entre no Instagram',
+      body: `<div class="ig-box">${igBoxHTML(st)}</div>
+        <p class="hint" style="margin-top:14px">Ou publique manualmente: o botão abaixo baixa a imagem, copia a legenda e abre o Instagram.</p>
         <button type="button" class="btn" id="pubManual">${ic('download')}Baixar e abrir o Instagram</button>`,
-      onOpen: root => { $('#pubManual', root).onclick = async () => { await baixarPost(cv); await copiarLegenda(true); window.open('https://www.instagram.com/', '_blank', 'noopener'); dlg.close(); oferecerMarcar(); toast('Imagem baixada e legenda copiada. No Instagram: Criar → escolher a imagem → colar a legenda.'); }; },
+      onOpen: root => { refreshIg(); $('#pubManual', root).onclick = async () => { await baixarPost(cv); await copiarLegenda(true); window.open('https://www.instagram.com/', '_blank', 'noopener'); dlg.close(); oferecerMarcar(); toast('Imagem baixada e legenda copiada. No Instagram: Criar → escolher a imagem → colar a legenda.'); }; },
     });
     return;
   }
-  if (!confirm(`Publicar agora no Instagram?\n\n“${s.titulo}” — modelo ${ESTILOS[s.estilo][0]}, ${FORMATOS[s.formato][2]}.`)) return;
+  if (st.ocupado === 'login') { toast('Termine o login na janela do Instagram primeiro.'); return; }
+  if (!confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\n“${s.titulo}” — modelo ${ESTILOS[s.estilo][0]}, ${FORMATOS[s.formato][2]}.`)) return;
   btn.disabled = true;
   try {
     const r = await fetch(POSTADOR + '/publicar', {

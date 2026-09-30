@@ -286,7 +286,7 @@ const ROUTES = {
   divulgar: ['Criar post para o Instagram', () => viewDivulgar(), 'galeria'],
   produtos: ['Produtos e preços', viewProdutos, 'mais'], insumos: ['Insumos', viewInsumos, 'mais'],
   compras: ['Compras de insumos', viewCompras, 'mais'], clientes: ['Clientes', viewClientes, 'mais'],
-  config: ['Configurações', viewConfig, 'mais'], backup: ['Backup e exportação', viewBackup, 'mais'],
+  config: ['Configurações', viewConfig, 'mais'], instagram: ['Instagram', () => viewInstagram(), 'mais'], backup: ['Backup e exportação', viewBackup, 'mais'],
 };
 const state = { mesInicio: today().slice(0, 7), mesVendas: today().slice(0, 7), filtroVendas: 'todas' };
 
@@ -307,6 +307,7 @@ function render() {
   $('#view').innerHTML = fn();
   if (r === 'divulgar') initStudio();
   if (r === 'galeria') initGaleria();
+  if (r === 'instagram') refreshIg();
 }
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 const topActions = html => { $('#topAct').innerHTML = html; };
@@ -661,6 +662,7 @@ function viewMais() {
     ${t('insumos', 'layers', 't-gold', 'Insumos', `${db.insumos.length} materiais cadastrados`)}
     ${t('compras', 'cart', 't-blue', 'Compras de insumos', `${db.compras.length} compras registradas`)}
     ${t('clientes', 'users', 't-rose', 'Clientes', `${db.clientes.length} clientes`)}
+    ${t('instagram', 'instagram', 't-rose', 'Instagram', 'Conta conectada, entrar e sair')}
     ${t('config', 'sliders', 't-ok', 'Configurações', 'Margem, mão de obra, taxas, tema')}
     ${t('backup', 'shield', backupAtrasado() ? 't-warn' : 't-ok', 'Backup e exportação', db.meta.ultimoBackup ? 'Último em ' + fdate(db.meta.ultimoBackup) : 'Nenhum backup ainda')}
   </div>`;
