@@ -8,12 +8,17 @@ const ESTILOS = { elegante: ['Elegante', '#d9b877'], moderno: ['Moderno', '#6645
 const SELOS = ['', 'Pronta entrega', 'Novo', 'Últimas unidades', 'Personalizado', 'Sob encomenda', 'Promoção'];
 
 const studio = {
-  prodId: null, fotoId: null, src: null, srcId: 0, fromFile: false, formato: null, estilo: null,
+  legendaTipo: 'instagram', prodId: null, fotoId: null, src: null, srcId: 0, fromFile: false, formato: null, estilo: null,
   auto: true, intens: 60, brilho: 0, contraste: 0, saturacao: 0, calor: 0, zoom: 100, px: 0, py: 0,
   titulo: '', preco: 0, mostrarPreco: true, selo: 'Pronta entrega', legenda: '', legendaEditada: false,
   _tituloDe: null, _proc: null, _procKey: '',
 };
-const divCfg = () => (db.params.divulgar ||= { frase: 'Feito à mão com amor e fé', cta: 'Encomende pelo WhatsApp', whatsapp: '', instagram: '', estilo: 'elegante', formato: 'retrato' });
+const INSTAGRAM_PADRAO = '@tercos.de.amor.e.fe';
+const divCfg = () => {
+  const d = (db.params.divulgar ||= { frase: 'Feito à mão com amor e fé', cta: 'Encomende pelo WhatsApp', whatsapp: '', instagram: '', estilo: 'elegante', formato: 'retrato' });
+  if (!d.instagram) d.instagram = INSTAGRAM_PADRAO;
+  return d;
+};
 
 /* ---------- imagem de origem ---------- */
 async function srcFromProduct(p) {
@@ -300,8 +305,21 @@ function drawPost(cv) {
 window.addEventListener('resize', () => { const cv = $('#stCanvas'); if (cv) fitCanvas(cv); });
 
 /* ---------- legenda ---------- */
+const noCelular = () => matchMedia('(pointer: coarse)').matches;
 function gerarLegenda() {
   const s = studio, c = divCfg();
+  if (s.legendaTipo === 'whatsapp') {
+    // WhatsApp: curta, com *negrito* e sem hashtags
+    const ig = c.instagram.trim();
+    const W = [`*✨ ${s.titulo} ✨*`];
+    if (c.frase) W.push(`_${c.frase}_ 🙏`);
+    W.push('');
+    if (s.selo) W.push(`🏷️ ${s.selo}`);
+    if (s.mostrarPreco && s.preco > 0) W.push(`💰 *${brl(s.preco)}*`);
+    W.push('', '💬 Responda esta mensagem para encomendar!');
+    if (ig) W.push(`📸 Mais modelos no Instagram: ${ig.startsWith('@') ? ig : '@' + ig}`);
+    return W.join('\n').replace(/\n{3,}/g, '\n\n');
+  }
   const L = [`✨ ${s.titulo} ✨`];
   if (c.frase) L.push('', c.frase);
   L.push('', '🙏 Peça feita à mão, com carinho e oração.');
@@ -311,7 +329,8 @@ function gerarLegenda() {
   if (c.cta) cont.push(`👉 ${c.cta}`);
   if (c.whatsapp.trim()) cont.push(`📲 WhatsApp: ${c.whatsapp.trim()}`);
   if (cont.length) L.push('', ...cont);
-  const marca = (db.params.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  // hashtag da marca a partir do @ do Instagram (ex.: @tercos.de.amor.e.fe → #tercosdeamorefe)
+  const marca = (c.instagram.trim() || db.params.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   L.push('', ['#terço', '#terçoartesanal', '#terçopersonalizado', '#artesanatocatolico', '#presentereligioso', '#feitoamao', '#fécatólica', '#nossasenhora', marca && '#' + marca].filter(Boolean).join(' '));
   return L.join('\n');
 }
@@ -331,8 +350,10 @@ function viewDivulgar() {
       <div class="st-canvas"><canvas id="stCanvas" aria-label="Prévia do post"></canvas></div>
       <p class="hint" style="margin:10px 0 12px;text-align:center">Arraste a foto para ajustar o enquadramento.</p>
       <div class="st-actions">
-        <button class="btn pri" data-s="publicar">${ic('instagram')}Publicar no Instagram</button>
-        <button class="btn" data-s="share">${ic('share')}Compartilhar</button>
+        ${noCelular()
+          ? `<button class="btn pri" data-s="share">${ic('share')}Postar / Compartilhar</button>`
+          : `<button class="btn pri" data-s="publicar">${ic('instagram')}Publicar no Instagram</button>
+             <button class="btn" data-s="share">${ic('share')}Compartilhar</button>`}
         <button class="btn" data-s="download">${ic('download')}Baixar</button>
         <button class="btn" data-s="copy">${ic('copy')}Copiar legenda</button>
       </div>
@@ -367,6 +388,7 @@ function viewDivulgar() {
         <label>Instagram<input name="instagram" value="${esc(c.instagram)}" placeholder="@seuperfil"></label></div>
       </div>
       <div class="card"><div class="card-h">${ic('chat')}<h3>4. Legenda</h3><button type="button" class="btn sm" data-s="regen">${ic('refresh')}Gerar de novo</button></div>
+        <div class="chips">${[['instagram', 'instagram', 'Instagram / Facebook'], ['whatsapp', 'chat', 'WhatsApp']].map(([v, i, l]) => `<button type="button" class="chip ${s.legendaTipo === v ? 'on' : ''}" data-leg="${v}">${ic(i)}${l}</button>`).join('')}</div>
         <textarea name="legenda" style="min-height:230px"></textarea>
       </div>
       ${(db.posts || []).length ? `<div class="card"><div class="card-h">${ic('instagram')}<h3>Publicados</h3></div><div class="list">${[...db.posts].reverse().slice(0, 8).map(x => `<div class="li" style="cursor:default">${foto(get('produtos', x.produtoId), 'sm')}<div class="li-main"><div class="li-t">${esc(x.titulo)}</div><div class="li-s">${fdate(x.data)} · ${esc(ESTILOS[x.estilo]?.[0] || '')}</div></div><span class="tag ${x.status === 'publicado' ? 'ok' : 'warn'}">${x.status === 'publicado' ? 'publicado' : 'conferir'}</span></div>`).join('')}</div></div>` : ''}
@@ -415,7 +437,13 @@ async function initStudio() {
     save(); // guarda frase, chamada e contatos
   });
   root.addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
+    const leg = e.target.closest('[data-leg]');
+    if (leg) {
+      s.legendaTipo = leg.dataset.leg; s.legendaEditada = false; setLeg();
+      $$('[data-leg]', root).forEach(x => x.classList.toggle('on', x === leg));
+      return;
+    }
+    const chip = e.target.closest('.chip[data-k]');
     if (chip) {
       const k = chip.dataset.k; s[k] = c[k] = chip.dataset.v;
       $$(`.chip[data-k="${k}"]`, root).forEach(b => b.classList.toggle('on', b === chip));

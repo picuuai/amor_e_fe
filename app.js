@@ -290,7 +290,7 @@ const ROUTES = {
   inicio: ['Início', viewInicio], vendas: ['Vendas', viewVendas], producao: ['Produção', viewProducao],
   estoque: ['Estoque', viewEstoque], mais: ['Cadastros', viewMais],
   galeria: ['Galeria de fotos', () => viewGaleria()],
-  divulgar: ['Criar post para o Instagram', () => viewDivulgar(), 'galeria'],
+  divulgar: ['Criar post', () => viewDivulgar(), 'galeria'],
   produtos: ['Produtos e preços', viewProdutos, 'mais'], insumos: ['Insumos', viewInsumos, 'mais'],
   compras: ['Compras de insumos', viewCompras, 'mais'], clientes: ['Clientes', viewClientes, 'mais'],
   config: ['Configurações', viewConfig, 'mais'], instagram: ['Instagram', () => viewInstagram(), 'mais'],
