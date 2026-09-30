@@ -274,7 +274,9 @@ textarea{min-height:70px;resize:vertical}
 @media (max-width:600px){.ggrid{grid-template-columns:1fr 1fr;gap:10px}}
 
 /* estúdio de divulgação */
-.studio{display:grid;gap:16px;align-items:start}
+/* minmax(0,1fr): a coluna nunca fica mais larga que a tela (as fileiras que rolam para o lado não empurram) */
+.studio{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+.st-prev,.st-ctrl,.st-ctrl .card{min-width:0}
 @media (min-width:1000px){.studio{grid-template-columns:minmax(0,1fr) 400px}.st-prev{position:sticky;top:16px}}
 .st-canvas{display:flex;justify-content:center}
 .st-canvas canvas{display:block;border-radius:12px;box-shadow:0 10px 30px -10px rgba(20,10,50,.35);touch-action:none;cursor:grab;max-width:100%}
