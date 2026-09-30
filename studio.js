@@ -3,12 +3,12 @@
    A publicação automática no Instagram é feita pelo "postador" (Python) rodando neste computador. */
 
 const POSTADOR = 'http://127.0.0.1:8777';
-const FORMATOS = { retrato: [1080, 1350, 'Feed 4:5'], quadrado: [1080, 1080, 'Quadrado'], story: [1080, 1920, 'Stories'] };
-const ESTILOS = { elegante: ['Elegante', '#d9b877'], moderno: ['Moderno', '#6645d8'], minimal: ['Minimalista', '#e9e6e0'], celestial: ['Celestial', '#1f3266'] };
+const FORMATOS = { retrato: [1080, 1350, 'Feed 4:5'], quadrado: [1080, 1080, 'Quadrado'], story: [1080, 1920, 'Stories'], foto: [1080, 1350, 'Proporção da foto'] };
+const ESTILOS = { original: ['Foto original', 'linear-gradient(135deg,#caa,#8a7a66)'], elegante: ['Elegante', '#d9b877'], moderno: ['Moderno', '#6645d8'], minimal: ['Minimalista', '#e9e6e0'], celestial: ['Celestial', '#1f3266'] };
 const SELOS = ['', 'Pronta entrega', 'Novo', 'Últimas unidades', 'Personalizado', 'Sob encomenda', 'Promoção'];
 
 const studio = {
-  legendaTipo: 'instagram', prodId: null, fotoId: null, src: null, srcId: 0, fromFile: false, formato: null, estilo: null,
+  textosFoto: true, legendaTipo: 'instagram', prodId: null, fotoId: null, src: null, srcId: 0, fromFile: false, formato: null, estilo: null,
   auto: true, intens: 60, brilho: 0, contraste: 0, saturacao: 0, calor: 0, zoom: 100, px: 0, py: 0,
   titulo: '', preco: 0, mostrarPreco: true, selo: 'Pronta entrega', legenda: '', legendaEditada: false,
   _tituloDe: null, _proc: null, _procKey: '',
@@ -177,7 +177,54 @@ const contatos = () => {
   return [c.whatsapp.trim() && 'WhatsApp ' + c.whatsapp.trim(), ig && (ig.startsWith('@') ? ig : '@' + ig)].filter(Boolean).join('   •   ');
 };
 
+// tamanho final do post; "Proporção da foto" segue a foto, dentro do que o Instagram aceita (4:5 até 1,91:1)
+function dimensoes() {
+  const s = studio;
+  if (s.formato !== 'foto') return FORMATOS[s.formato];
+  const r = s.src ? Math.min(1.91, Math.max(0.8, s.src.width / s.src.height)) : 0.8;
+  return [1080, Math.round(1080 / r)];
+}
+
 const TEMPLATES = {
+  // a foto inteira, sem moldura; nome, preço e contatos por cima numa faixa escura suave (opcional)
+  original(g, W, H, img) {
+    const s = studio, c = divCfg();
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    photo(g, img, 0, 0, W, H, null, false);
+    if (!s.textosFoto) return;
+    const u = Math.min(W, H * 1.1) / 1080;   // fotos deitadas (mais baixas) usam letras menores
+    const fh = H * 0.5, fb = g.createLinearGradient(0, H - fh, 0, H);
+    fb.addColorStop(0, 'rgba(0,0,0,0)'); fb.addColorStop(0.5, 'rgba(0,0,0,.5)'); fb.addColorStop(1, 'rgba(0,0,0,.78)');
+    g.fillStyle = fb; g.fillRect(0, H - fh, W, fh);
+    const ft = g.createLinearGradient(0, 0, 0, 150 * u);
+    ft.addColorStop(0, 'rgba(0,0,0,.45)'); ft.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = ft; g.fillRect(0, 0, W, 150 * u);
+    g.save();
+    g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 10 * u;
+    g.fillStyle = '#fff'; font(g, 700, 24 * u); g.textBaseline = 'middle';
+    spaced(g, (db.params.nome || '').toUpperCase(), W / 2, 50 * u, 7 * u);
+    if (s.selo) { font(g, 800, 24 * u); pill(g, s.selo.toUpperCase(), 44 * u, 88 * u, 54 * u, '#f1c75b', '#3b2a1a', 'left', 22 * u); }
+    const X = 56 * u, maxW = W - 112 * u, items = [];
+    items.push(tItem(g, s.titulo, maxW, 64 * u, 34 * u, 2, sz => font(g, 700, sz, 'Playfair Display'), '#fff', 'left', X));
+    if (c.frase) items.push(tItem(g, c.frase, maxW, 30 * u, 20 * u, 1, sz => font(g, 500, sz, 'Playfair Display', 'italic'), 'rgba(255,255,255,.9)', 'left', X));
+    const temPreco = s.mostrarPreco && s.preco > 0, cta = [c.cta, contatos()].filter(Boolean);
+    if (temPreco || cta.length) items.push({
+      h: 66 * u, draw: y0 => {
+        let pw = 0;
+        if (temPreco) { font(g, 800, 34 * u); pw = pill(g, brl(s.preco), X, y0, 66 * u, '#f1c75b', '#2a1d10', 'left', 26 * u) + 22 * u; }
+        const room = maxW - pw; let sz = 24 * u; font(g, 600, sz);
+        while (cta.some(t => g.measureText(t).width > room) && sz > 14 * u) { sz -= 1; font(g, 600, sz); }
+        g.fillStyle = '#fff'; g.textAlign = 'left'; g.textBaseline = 'middle';
+        cta.slice(0, 2).forEach((t, i, a) => g.fillText(t, X + pw, y0 + 33 * u + (i - (a.length - 1) / 2) * sz * 1.25));
+      },
+    });
+    // empilha de baixo para cima, colado na borda de baixo
+    const gap = 12 * u, tot = items.reduce((a, i) => a + i.h, 0) + gap * (items.length - 1);
+    let y = H - 44 * u - tot;
+    for (const it of items) { it.draw(y); y += it.h + gap; }
+    g.restore();
+  },
+
   elegante(g, W, H, img) {
     const u = W / 1080, s = studio, c = divCfg();
     g.fillStyle = '#f6eee2'; g.fillRect(0, 0, W, H);
@@ -295,7 +342,7 @@ function fitCanvas(cv) {
   cv.style.width = Math.round(cv.width * k) + 'px'; cv.style.height = Math.round(cv.height * k) + 'px';
 }
 function drawPost(cv) {
-  const s = studio, [W, H] = FORMATOS[s.formato];
+  const s = studio, [W, H] = dimensoes();
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   fitCanvas(cv);
   const g = cv.getContext('2d');
@@ -376,6 +423,7 @@ function viewDivulgar() {
       <div class="card"><div class="card-h">${ic('sparkles')}<h3>2. Modelo</h3></div>
         ${chips('estilo', ESTILOS, true)}
         ${chips('formato', FORMATOS, false)}
+        <label class="chk" id="optTextos" ${s.estilo === 'original' ? '' : 'hidden'}><input type="checkbox" name="textosFoto" ${s.textosFoto ? 'checked' : ''}>Mostrar nome, preço e contatos sobre a foto</label>
       </div>
       <div class="card"><div class="card-h">${ic('tag')}<h3>3. Textos</h3></div>
         <label>Título<input name="titulo" value="${esc(s.titulo)}"></label>
@@ -432,6 +480,7 @@ async function initStudio() {
       if (nova) { await srcFromGaleria(nova.id); toast('Foto adicionada à galeria.'); }
       refreshStrip(); srcLabel(); redraw();
     } else if (n === 'auto') { s.auto = t.checked; redraw(); }
+    else if (n === 'textosFoto') { s.textosFoto = t.checked; redraw(); }
     else if (n === 'mostrarPreco') { s.mostrarPreco = t.checked; setLeg(); redraw(); }
     else if (n === 'selo') { s.selo = t.value; setLeg(); redraw(); }
     save(); // guarda frase, chamada e contatos
@@ -446,6 +495,7 @@ async function initStudio() {
     const chip = e.target.closest('.chip[data-k]');
     if (chip) {
       const k = chip.dataset.k; s[k] = c[k] = chip.dataset.v;
+      if (k === 'estilo') $('#optTextos', root).hidden = s.estilo !== 'original';
       $$(`.chip[data-k="${k}"]`, root).forEach(b => b.classList.toggle('on', b === chip));
       save(); redraw(); return;
     }
