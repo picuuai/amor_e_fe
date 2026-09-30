@@ -293,6 +293,9 @@ input[type=range]{padding:0;border:0;background:none;accent-color:var(--pri);mar
 details{margin:4px 0 8px}
 summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--pri);margin-bottom:10px}
 .btn:disabled{opacity:.55;cursor:progress}
+.zoom-row{display:flex;align-items:flex-end;gap:10px}
+.zoom-row label{flex:1;margin-bottom:12px}
+.zoom-row .btn{margin-bottom:12px}
 .st-ctrl{display:flex;flex-direction:column}
 /* estúdio no celular: prévia fixa no topo, "Modelo" primeiro, botões fixos embaixo */
 @media (max-width:999px){

@@ -130,15 +130,34 @@ function stack(items, top, bottom, gap) {
   let y = top + Math.max(0, (bottom - top - tot) / 2);
   for (const it of items) { it.draw(y); y += it.h + gap; }
 }
+let _fundo = { img: null, c: null };
+function fundoDesfocado(img) {
+  if (_fundo.img === img) return _fundo.c;
+  const c = document.createElement('canvas'), k = 28 / Math.max(img.width, img.height);
+  c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, c.width, c.height);
+  _fundo = { img, c };
+  return c;
+}
 function photo(g, img, x, y, w, h, clip, vignette = true) {
   const s = studio;
   g.save();
   if (clip) clip(); else { g.beginPath(); g.rect(x, y, w, h); }
   g.clip();
   if (img) {
-    const k = Math.max(w / img.width, h / img.height) * s.zoom / 100;
-    const dw = img.width * k, dh = img.height * k, mx = (dw - w) / 2, my = (dh - h) / 2;
-    s.px = Math.max(-mx, Math.min(mx, s.px)); s.py = Math.max(-my, Math.min(my, s.py));
+    // zoom 100 = preenche a área; menos que 100 = a foto fica menor e cabe inteira
+    const kc = Math.max(w / img.width, h / img.height), k = kc * s.zoom / 100;
+    const dw = img.width * k, dh = img.height * k;
+    s._slot = { w, h, iw: img.width, ih: img.height };
+    if (dw < w - 1 || dh < h - 1) {
+      // sobrou espaço: fundo com a própria foto desfocada (reduz e amplia de novo — funciona em qualquer navegador)
+      const t = fundoDesfocado(img);
+      const bw = img.width * kc * 1.1, bh = img.height * kc * 1.1;
+      g.drawImage(t, x + (w - bw) / 2, y + (h - bh) / 2, bw, bh);
+      g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x, y, w, h);
+    }
+    const lx = Math.abs(dw - w) / 2, ly = Math.abs(dh - h) / 2;
+    s.px = Math.max(-lx, Math.min(lx, s.px)); s.py = Math.max(-ly, Math.min(ly, s.py));
     g.drawImage(img, x + (w - dw) / 2 + s.px, y + (h - dh) / 2 + s.py, dw, dh);
   }
   if (vignette && s.auto && s.intens > 0) {
@@ -235,7 +254,7 @@ const TEMPLATES = {
     g.fillStyle = '#a8792a'; font(g, 700, 26 * u); g.textBaseline = 'middle';
     spaced(g, (db.params.nome || '').toUpperCase(), W / 2, 104 * u, 9 * u);
     const bottom = Math.max(370 * u, H * 0.31), x = 130 * u, w = W - 260 * u, y = 150 * u, h = H - y - bottom;
-    const r = Math.min(w / 2, h * 0.42);
+    const r = w / 2;   // semicírculo inteiro: o topo do arco fica exatamente em "y" (não cobre a marca)
     const arch = (o = 0) => { g.beginPath(); g.moveTo(x - o, y + h + o); g.lineTo(x - o, y + r); g.arc(x + w / 2, y + r, w / 2 + o, Math.PI, 0); g.lineTo(x + w + o, y + h + o); g.closePath(); };
     g.save(); g.shadowColor = 'rgba(90,60,20,.3)'; g.shadowBlur = 50 * u; g.shadowOffsetY = 18 * u; arch(); g.fillStyle = '#fff'; g.fill(); g.restore();
     photo(g, img, x, y, w, h, () => arch());
@@ -414,10 +433,12 @@ function viewDivulgar() {
         <label>Terço<select name="prod">${opts(produtosOrd(), s.prodId)}</select></label>
         <div id="stStrip">${stripHTML()}</div>
         <div class="bar"><label class="btn" style="margin:0">${ic('image')}Carregar foto nova<input type="file" name="file" accept="image/*" hidden></label><span class="muted" id="stSrc" style="font-size:13px"></span></div>
+        <div class="zoom-row">${rng('zoom', 'Zoom (%)', 30, 250)}<button type="button" class="btn sm" data-s="encaixar">${ic('image')}Foto inteira</button></div>
+        <p class="hint" style="margin:-6px 0 12px">Menos de 100% = a foto diminui e cabe inteira no modelo (o fundo vira a própria foto desfocada).</p>
         <label class="chk"><input type="checkbox" name="auto" ${s.auto ? 'checked' : ''}>Realce automático (luz, cores e contraste)</label>
         ${rng('intens', 'Intensidade do realce', 0, 100)}
         <details><summary>Ajustes finos</summary>
-          ${rng('brilho', 'Brilho', -50, 50)}${rng('contraste', 'Contraste', -50, 50)}${rng('saturacao', 'Cores', -50, 50)}${rng('calor', 'Tom quente', -50, 50)}${rng('zoom', 'Zoom', 100, 250)}
+          ${rng('brilho', 'Brilho', -50, 50)}${rng('contraste', 'Contraste', -50, 50)}${rng('saturacao', 'Cores', -50, 50)}${rng('calor', 'Tom quente', -50, 50)}
           <button type="button" class="btn sm" data-s="resetAdj">Zerar ajustes</button>
         </details>
         <button type="button" class="btn sm" data-s="usarFoto" style="margin-top:12px">${ic('check')}Usar esta foto no cadastro do terço</button>
@@ -510,6 +531,14 @@ async function initStudio() {
     const a = b.dataset.s;
     if (a === 'marcarPub') { marcarPublicada(s.fotoId); setPub(`${ic('check')}<div>Foto marcada como publicada.</div>`, 'ok'); refreshStrip(); srcLabel(); }
     if (a === 'regen') { s.legendaEditada = false; setLeg(); }
+    if (a === 'encaixar' && s._slot) {
+      // zoom que faz a foto caber inteira na área do modelo atual
+      const { w, h, iw, ih } = s._slot;
+      s.zoom = Math.max(30, Math.floor(100 * Math.min(w / iw, h / ih) / Math.max(w / iw, h / ih)));
+      s.px = s.py = 0;
+      root.querySelector('[name=zoom]').value = s.zoom; root.querySelector('[data-out=zoom]').textContent = s.zoom;
+      redraw();
+    }
     if (a === 'resetAdj') {
       Object.assign(s, { brilho: 0, contraste: 0, saturacao: 0, calor: 0, zoom: 100, px: 0, py: 0 });
       for (const n of ['brilho', 'contraste', 'saturacao', 'calor', 'zoom']) { root.querySelector(`[name=${n}]`).value = s[n]; root.querySelector(`[data-out=${n}]`).textContent = s[n]; }
