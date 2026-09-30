@@ -302,6 +302,16 @@ summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--pri);margin-bo
 .hero-sync .i{width:14px;height:14px}
 .hero-sync:not(.ok):not(.sending):not(.pending):not(.error):not(.offline){display:none}
 
+/* tela de bloqueio (aparelho não autorizado) */
+body.locked .nav,body.locked .top{display:none!important}
+body.locked main{padding-bottom:40px}
+.lock{max-width:620px;margin:8vh auto 0;text-align:center}
+.lock h2{margin:14px 0 6px;font-size:24px;letter-spacing:-.02em}
+.lock>p{margin:0 0 20px}
+.lock-ic{display:inline-grid;place-items:center;width:84px;height:84px;border-radius:24px;background:var(--soft);color:var(--pri)}
+.lock-setup{text-align:left;margin-top:18px}
+.lock-setup summary{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:12px}
+
 /* diálogo */
 dialog{border:0;border-radius:22px;padding:0;width:min(680px,calc(100vw - 24px));max-height:calc(100vh - 32px);background:var(--card);color:var(--ink);box-shadow:0 30px 80px rgba(10,5,30,.35)}
 dialog::backdrop{background:rgba(20,12,40,.5);backdrop-filter:blur(3px)}

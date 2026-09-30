@@ -24,6 +24,10 @@ const FotoDB = (() => {
     get: (store, k) => tx(store, 'readonly', s => s.get(k)),
     keys: store => tx(store, 'readonly', s => s.getAllKeys()),
     delStore: (store, k) => tx(store, 'readwrite', s => s.delete(k)),
+    apagarTudo: async () => {
+      if (conn) { (await conn).close(); conn = null; }
+      await new Promise(ok => { const r = indexedDB.deleteDatabase('tercos-fotos'); r.onsuccess = r.onerror = r.onblocked = ok; });
+    },
     del: async k => { await tx('full', 'readwrite', s => s.delete(k)); await tx('thumb', 'readwrite', s => s.delete(k)); },
   };
 })();

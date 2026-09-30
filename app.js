@@ -61,6 +61,9 @@ const ICONS = {
   shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3"/><path d="M4 4v4h4M20 20v-4h-4"/>',
   scale: '<path d="M12 3v18M5 21h14M6 7h12"/><path d="m6 7-3 7a3 3 0 0 0 6 0zM18 7l-3 7a3 3 0 0 0 6 0z"/>',
+  phone: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16 7l2.5 2.5M18.5 4.5 21 7"/>',
   megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M18 6a8 8 0 0 1 0 12"/>',
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
   share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
@@ -296,6 +299,15 @@ const ROUTES = {
 const state = { mesInicio: today().slice(0, 7), mesVendas: today().slice(0, 7), filtroVendas: 'todas' };
 
 function render() {
+  // aparelho não autorizado: só a tela de bloqueio, nada dos dados
+  const bloqueado = typeof Sync !== 'undefined' && Sync.bloqueado();
+  document.body.classList.toggle('locked', bloqueado);
+  if (bloqueado) {
+    if (dlg.open) dlg.close();
+    document.title = 'Controle de Terços';
+    $('#view').innerHTML = Sync.lockView();
+    return;
+  }
   const r = location.hash.slice(1) || 'inicio';
   const [title, fn, parent] = ROUTES[r] || ROUTES.inicio;
   $('#title').textContent = title;

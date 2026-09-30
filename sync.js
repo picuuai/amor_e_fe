@@ -114,6 +114,7 @@ const Sync = (() => {
     if (!navigator.onLine) { setStatus('offline'); return; }
     rodando = true; setStatus('sincronizando');
     try {
+      if (!(await verificarAparelho())) return;   // foi desconectado pelo computador principal
       for (let tentativa = 0; tentativa < 4; tentativa++) {
         const snap = J(db), baseStr = localStorage.getItem(BASE_KEY);
         const rem = await lerArquivo('dados.json');
@@ -144,7 +145,9 @@ const Sync = (() => {
       sincronizarFotos();
     } catch (e) {
       console.warn(e);
-      setStatus(navigator.onLine ? 'erro' : 'offline', e.message);
+      // chave trocada/apagada: um aparelho secundário fica bloqueado e apaga os dados
+      if (e.status === 401 && !ehPrincipal()) { rodando = false; return apagarEsteAparelho('chave'); }
+      setStatus(navigator.onLine ? 'erro' : 'offline', e.status === 401 ? 'a chave foi apagada ou venceu — cole uma nova em “Trocar a chave”' : e.message);
     } finally {
       rodando = false;
       if (denovo) { denovo = false; agendar(1500); }
@@ -223,9 +226,114 @@ const Sync = (() => {
     }
   }
 
+  /* ---------- aparelhos conectados (aparelhos.json no repositório) ---------- */
+  const DEV_KEY = 'tercos-aparelho', REVOGADO_KEY = 'tercos-revogado';
+  function nomePadrao() {
+    const ua = navigator.userAgent;
+    const so = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Celular Android' : /Windows/.test(ua) ? 'Computador Windows' : /Mac/.test(ua) ? 'Mac' : 'Aparelho';
+    const nav = /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : '';
+    return nav ? `${so} · ${nav}` : so;
+  }
+  function meuAparelho() {
+    let d = ler(DEV_KEY);
+    if (!d) { d = { id: uid(), nome: nomePadrao() }; try { localStorage.setItem(DEV_KEY, JSON.stringify(d)); } catch { } }
+    return d;
+  }
+  // principal = conectado colando a chave (os outros entram pelo QR Code)
+  const ehPrincipal = () => !!cfg && (cfg.principal ?? !/Android|iPhone|iPad/i.test(navigator.userAgent));
+  async function lerAparelhos() {
+    const a = await lerArquivo('aparelhos.json');
+    return a ? { sha: a.sha, lista: JSON.parse(new TextDecoder().decode(a.bytes)) } : { sha: null, lista: {} };
+  }
+  async function alterarAparelhos(fn) {
+    for (let t = 0; t < 4; t++) {
+      const { sha, lista } = await lerAparelhos();
+      const nova = fn(lista);
+      try { await gravarArquivo('aparelhos.json', new TextEncoder().encode(JSON.stringify(nova, null, 1)), sha, 'aparelhos conectados'); return nova; }
+      catch (e) { if (!e.conflito) throw e; }
+    }
+    throw new Error('não foi possível atualizar a lista de aparelhos');
+  }
+  let ultimaVerif = 0;
+  // registra este aparelho e confere se o computador principal mandou desconectar
+  async function verificarAparelho(forcar = false) {
+    if (!forcar && Date.now() - ultimaVerif < 5 * 60e3) return true;
+    ultimaVerif = Date.now();
+    const eu = meuAparelho(), { lista } = await lerAparelhos(), reg = lista[eu.id];
+    if (reg?.revogado) { await apagarEsteAparelho(); return false; }
+    const agora = new Date().toISOString();
+    if (!reg || reg.principal !== ehPrincipal() || Date.now() - Date.parse(reg.ultimoAcesso || 0) > 15 * 60e3) {
+      await alterarAparelhos(l => {
+        l[eu.id] = { nome: eu.nome, conectadoEm: agora, ...(l[eu.id] || {}), tipo: aparelho(), principal: ehPrincipal(), ultimoAcesso: agora };
+        return l;
+      });
+    }
+    return true;
+  }
+  // motivo: 'revogado' (desconectado pelo principal), 'chave' (chave trocada) ou 'saiu' (desconectou por conta própria)
+  async function apagarEsteAparelho(motivo = 'revogado') {
+    const eu = meuAparelho();
+    if (motivo !== 'chave') try { await alterarAparelhos(l => { if (l[eu.id]) l[eu.id].removidoEm = new Date().toISOString(); return l; }); } catch { }
+    cfg = null; clearTimeout(timer);
+    for (const k of [KEY, CFG_KEY, BASE_KEY]) try { localStorage.removeItem(k); } catch { }
+    try { await FotoDB.apagarTudo(); } catch { }
+    try { if (motivo !== 'saiu') localStorage.setItem(REVOGADO_KEY, motivo); } catch { }
+    location.hash = 'inicio'; location.reload();
+  }
+  const haQuanto = iso => {
+    if (!iso) return '—';
+    const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    return m < 2 ? 'agora' : m < 60 ? `há ${m} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} dia(s)`;
+  };
+  const dataHora = iso => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  async function carregarAparelhos() {
+    const box = $('#devList'); if (!box) return;
+    try {
+      const { lista } = await lerAparelhos(), eu = meuAparelho().id;
+      const devs = Object.entries(lista).sort((a, b) => (b[1].ultimoAcesso || '').localeCompare(a[1].ultimoAcesso || ''));
+      box.innerHTML = devs.length ? `<div class="list">${devs.map(([id, d]) => {
+        let st, acoes = '';
+        if (d.removidoEm) { st = `<span class="tag bad">desconectado ${dataHora(d.removidoEm)}</span>`; acoes = `<button class="btn sm" data-dev="remover" data-id="${id}">Tirar da lista</button>`; }
+        else if (d.revogado) { st = `<span class="tag warn">desconexão pendente</span> <span class="li-s" style="display:inline">sai quando abrir o app com internet</span>`; acoes = `<button class="btn sm" data-dev="remover" data-id="${id}">Tirar da lista</button>`; }
+        else { st = `último acesso ${haQuanto(d.ultimoAcesso)} · conectado em ${dataHora(d.conectadoEm)}`; if (id !== eu) acoes = `<button class="btn sm" data-dev="renomear" data-id="${id}">Renomear</button><button class="btn sm danger" data-dev="revogar" data-id="${id}">Desconectar</button>`; else acoes = `<button class="btn sm" data-dev="renomear" data-id="${id}">Renomear</button>`; }
+        return `<div class="li" style="cursor:default"><div class="av ${d.tipo === 'celular' ? 't-rose' : 't-blue'}">${ic(d.tipo === 'celular' ? 'phone' : 'monitor')}</div>
+          <div class="li-main"><div class="li-t" style="white-space:normal">${esc(d.nome || 'Aparelho')} ${id === eu ? '<span class="tag">este aparelho</span>' : ''} ${d.principal ? '<span class="tag ok">principal</span>' : ''}</div>
+          <div class="li-s" style="white-space:normal">${st}</div></div>
+          <div class="li-r" style="flex-direction:row;gap:6px">${acoes}</div></div>`;
+      }).join('')}</div>` : '<div class="muted">Nenhum aparelho registrado ainda.</div>';
+    } catch (e) { box.innerHTML = `<div class="alert bad">${ic('alert')}<div>Não foi possível carregar a lista: ${esc(e.message)}</div></div>`; }
+  }
+  async function acaoAparelho(a, id) {
+    const { lista } = await lerAparelhos(), d = lista[id]; if (!d) return carregarAparelhos();
+    if (a === 'renomear') {
+      const nome = prompt('Nome deste aparelho (ex.: Celular da Elisa):', d.nome || '');
+      if (!nome?.trim()) return;
+      await alterarAparelhos(l => { if (l[id]) l[id].nome = nome.trim(); return l; });
+      if (id === meuAparelho().id) { const eu = meuAparelho(); eu.nome = nome.trim(); localStorage.setItem(DEV_KEY, JSON.stringify(eu)); }
+    }
+    if (a === 'revogar') {
+      if (!confirm(`Desconectar “${d.nome}”?\n\nNa próxima vez que ele abrir o app com internet, ele sai da sincronização e os dados do negócio são apagados dele.\n\nSe o aparelho foi PERDIDO ou ROUBADO, use também “Trocar a chave” — assim ele perde o acesso na hora.`)) return;
+      await alterarAparelhos(l => { if (l[id]) { l[id].revogado = true; l[id].revogadoEm = new Date().toISOString(); } return l; });
+      toast(`${d.nome} será desconectado.`);
+    }
+    if (a === 'remover') await alterarAparelhos(l => { delete l[id]; return l; });
+    carregarAparelhos();
+  }
+  async function trocarChave(token) {
+    token = token.trim(); if (!token) throw new Error('cole a chave nova');
+    const teste = { repo: cfg.repo, token };
+    const r = await gh('', {}, teste);
+    if (!r.ok) throw new Error(await diagnosticar(teste));
+    const w = await gh('/contents/dados.json', {}, teste);
+    if (!w.ok && w.status !== 404) throw erroGH(w, await w.text());
+    cfg.token = token; gravarCfg();
+    // os outros aparelhos passam a ter a chave antiga (inválida); marca como desconectados
+    await alterarAparelhos(l => { for (const [id, d] of Object.entries(l)) if (id !== meuAparelho().id && !d.removidoEm) { d.revogado = true; d.removidoEm = new Date().toISOString(); } return l; });
+  }
+
   /* ---------- conectar / desconectar ---------- */
   const temDadosLocais = () => db.vendas.length || db.clientes.length || (db.galeria || []).length || db.producoes.length > 1 || db.compras.length > 15;
-  async function conectar(repo, token) {
+  async function conectar(repo, token, principal = true) {
     repo = repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
     token = token.trim();
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('o repositório deve ficar no formato usuario/nome');
@@ -238,12 +346,16 @@ const Sync = (() => {
     if (!info.private) throw new Error('o repositório precisa ser PRIVADO (os dados do negócio ficariam públicos)');
     const rem = await lerArquivo('dados.json', novo);
     if (rem && temDadosLocais() && !confirm('Já existem dados na nuvem.\n\nOs dados deste aparelho serão SUBSTITUÍDOS pelos da nuvem. Continuar?')) return false;
-    cfg = novo; gravarCfg();
+    cfg = { ...novo, principal }; gravarCfg();
     try { localStorage.removeItem(BASE_KEY); } catch { }
+    ultimaVerif = 0;
     await sincronizar();
     return true;
   }
-  function desconectar() {
+  async function desconectar() {
+    if (!ehPrincipal()) return apagarEsteAparelho('saiu'); // celular: sai e não deixa dados para trás
+    const eu = meuAparelho().id;
+    try { await alterarAparelhos(l => { delete l[eu]; return l; }); } catch { }
     cfg = null; gravarCfg();
     try { localStorage.removeItem(BASE_KEY); } catch { }
     clearTimeout(timer); setStatus('off');
@@ -272,14 +384,23 @@ const Sync = (() => {
   }
 
   function view() {
+    if (cfg && ehPrincipal()) setTimeout(carregarAparelhos, 0); // depois que a tela for montada
     if (cfg) return `
       <div class="card"><div class="card-h">${ic('refresh')}<h3>Sincronização ligada</h3></div>
         <div id="syncBox">${boxHTML()}</div>
         <div class="bar" style="margin:0">
           <button class="btn pri" data-sync="agora">${ic('refresh')}Sincronizar agora</button>
-          <button class="btn" data-sync="qr">${ic('grid')}Conectar o celular</button>
+          ${ehPrincipal() ? `<button class="btn" data-sync="qr">${ic('grid')}Conectar o celular</button>` : ''}
           <button class="btn danger" data-sync="sair">Desconectar este aparelho</button>
         </div></div>
+      ${ehPrincipal() ? `
+      <div class="card"><div class="card-h">${ic('phone')}<h3>Aparelhos conectados</h3><button class="btn sm" data-sync="devs">${ic('refresh')}Atualizar</button></div>
+        <p class="hint" style="margin:0 0 12px">Só aparece aqui, no computador principal. “Desconectar” tira o aparelho da sincronização e apaga dele os dados do negócio na próxima vez que ele abrir o app com internet.</p>
+        <div id="devList"><div class="muted">Carregando…</div></div></div>
+      <div class="card"><div class="card-h">${ic('key')}<h3>Trocar a chave</h3></div>
+        <p class="hint" style="margin:0 0 12px">Use se um aparelho foi <b>perdido ou roubado</b>: o acesso dele cai na hora. Crie uma chave nova no GitHub (igual à primeira), cole aqui e depois <b>apague a chave antiga</b> no GitHub. Os outros aparelhos precisarão ler o QR Code de novo.</p>
+        <div class="bar" style="margin:0;align-items:flex-end"><label style="flex:1;min-width:220px;margin:0">Chave nova<input id="syNova" type="password" autocomplete="off" placeholder="github_pat_…"></label>
+        <button class="btn" data-sync="trocar">${ic('key')}Trocar a chave</button></div></div>` : ''}
       <div class="card"><div class="card-h">${ic('shield')}<h3>Bom saber</h3></div>
         <ul style="margin:0;padding-left:20px;line-height:1.8">
           <li>As alterações são enviadas sozinhas alguns segundos depois de salvar, e o app busca novidades a cada minuto.</li>
@@ -287,8 +408,11 @@ const Sync = (() => {
           <li>Sem internet o app continua funcionando e sincroniza quando a conexão voltar.</li>
           <li>Perdeu o celular? No GitHub, em <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">Settings → Personal access tokens</a>, apague a chave “App Terços” e crie outra.</li>
         </ul></div>`;
+    return setupHTML();
+  }
+  function setupHTML() {
     return `
-      <div class="card"><div class="card-h">${ic('refresh')}<h3>Usar no computador e no celular ao mesmo tempo</h3></div>
+      <div class="card" style="text-align:left"><div class="card-h">${ic('refresh')}<h3>Configurar o computador principal</h3></div>
         <p class="hint" style="margin:0 0 14px">Os dados e as fotos ficam num repositório <b>privado</b> do seu GitHub. Configure <b>no computador</b>; o celular se conecta depois lendo um QR Code.</p>
         <ol class="steps">
           <li><b>Crie o repositório privado</b> dos dados:
@@ -307,6 +431,26 @@ const Sync = (() => {
         </ol>
         <p class="hint" style="margin:14px 0 0">No celular não precisa fazer nada disso: no computador, depois de conectado, clique em <b>Conectar o celular</b> e aponte a câmera para o QR Code.</p>
       </div>`;
+  }
+
+  // tela mostrada em aparelhos não autorizados: não dá acesso a nada do app
+  let conectandoQR = false;
+  function lockView() {
+    if (conectandoQR) return `<div class="lock"><div class="lock-ic">${ic('refresh', 'big')}</div><h2>Conectando…</h2><p class="muted">Baixando os dados do negócio. Só um instante.</p></div>`;
+    return `<div class="lock">
+      <div class="lock-ic">${ic('shield', 'big')}</div>
+      <h2>Aparelho não autorizado</h2>
+      <p class="muted">Este app só abre em aparelhos liberados pelo computador principal.</p>
+      <div class="card" style="text-align:left">
+        <b>Para liberar este aparelho:</b>
+        <ol class="steps" style="margin-top:8px">
+          <li>No computador principal, abra <b>Cadastros → Computador e celular</b>.</li>
+          <li>Clique em <b>Conectar o celular</b>.</li>
+          <li>Aponte a <b>câmera</b> deste aparelho para o QR Code e toque no link.</li>
+        </ol>
+      </div>
+      <details class="lock-setup"><summary>Sou o dono e quero configurar este aparelho como computador principal</summary>${setupHTML()}</details>
+    </div>`;
   }
 
   async function mostrarQR() {
@@ -329,11 +473,25 @@ const Sync = (() => {
   }
 
   document.addEventListener('click', async e => {
+    const dv = e.target.closest('[data-dev]');
+    if (dv) { dv.disabled = true; try { await acaoAparelho(dv.dataset.dev, dv.dataset.id); } catch (err) { toast('Erro: ' + err.message); } dv.disabled = false; return; }
     const b = e.target.closest('[data-sync]'); if (!b) return;
     const a = b.dataset.sync;
-    if (a === 'agora') { cfg.sha = null; await sincronizar(); if (status === 'ok') toast('Sincronizado.'); }
+    if (a === 'devs') carregarAparelhos();
+    if (a === 'trocar') {
+      b.disabled = true;
+      try { await trocarChave($('#syNova').value); toast('Chave trocada. Agora apague a chave antiga no GitHub e reconecte os outros aparelhos pelo QR Code.'); render(); }
+      catch (err) { toast('Não foi possível trocar: ' + err.message); }
+      b.disabled = false;
+    }
+    if (a === 'agora') { cfg.sha = null; ultimaVerif = 0; await sincronizar(); if (status === 'ok') toast('Sincronizado.'); }
     if (a === 'qr') mostrarQR().catch(() => { });
-    if (a === 'sair') { if (confirm('Desconectar este aparelho? Os dados continuam aqui e na nuvem, mas param de sincronizar.')) { desconectar(); render(); } }
+    if (a === 'sair') {
+      const txt = ehPrincipal()
+        ? 'Desconectar este computador?\n\nOs dados continuam na nuvem, mas o app fica BLOQUEADO aqui até você colar a chave de novo.'
+        : 'Desconectar este aparelho?\n\nO app fica bloqueado e os dados do negócio são apagados daqui (continuam na nuvem). Para voltar, leia o QR Code de novo.';
+      if (confirm(txt)) { await desconectar(); render(); }
+    }
     if (a === 'conectar') {
       b.disabled = true; b.textContent = 'Conectando…';
       try { if (await conectar($('#syRepo').value, $('#syToken').value)) { toast('Conectado! Agora conecte o celular pelo QR Code.'); render(); } }
@@ -348,14 +506,24 @@ const Sync = (() => {
   });
 
   function init() {
+    // este aparelho foi desconectado pelo computador principal
+    const rev = localStorage.getItem(REVOGADO_KEY);
+    if (rev) {
+      try { localStorage.removeItem(REVOGADO_KEY); } catch { }
+      const motivo = rev === 'chave' ? 'A chave de acesso foi trocada no computador principal' : 'Este aparelho foi desconectado pelo computador principal';
+      setTimeout(() => modal({ title: 'Aparelho desconectado', body: `<div class="alert warn">${ic('shield')}<div>${motivo} e os dados do negócio foram apagados dele.<br>Para voltar a usar, leia de novo o QR Code no computador.</div></div>` }), 300);
+    }
     // celular chegando pelo QR Code: #conectar=<código>
     const m = location.hash.match(/^#conectar=(.+)$/);
     if (m) {
       history.replaceState(null, '', location.pathname + location.search + '#inicio'); // tira a chave da barra de endereço
       try {
         const { r, t } = JSON.parse(atob(decodeURIComponent(m[1])));
-        conectar(r, t).then(ok => { if (ok) toast('Aparelho conectado! Os dados foram baixados.'); })
-          .catch(err => toast('Não foi possível conectar: ' + err.message));
+        conectandoQR = true;
+        conectar(r, t, false)
+          .then(ok => { if (ok) toast('Aparelho conectado! Os dados foram baixados.'); })
+          .catch(err => toast('Não foi possível conectar: ' + err.message))
+          .finally(() => { conectandoQR = false; render(); });
       } catch { toast('Código de conexão inválido.'); }
     }
     setInterval(() => { if (cfg && document.visibilityState === 'visible') agendar(0); }, 60000);
@@ -367,8 +535,9 @@ const Sync = (() => {
   }
 
   return {
-    init, view, pintar, baixarFoto,
+    init, view, lockView, pintar, baixarFoto,
     ativo: () => !!cfg,
+    bloqueado: () => !cfg,
     alterado: () => { if (!cfg) return; if (status !== 'sincronizando') setStatus('pendente'); agendar(); },
   };
 })();
