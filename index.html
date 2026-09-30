@@ -5,25 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Controle de Terços</title>
 <meta name="description" content="Custos, produção, estoque e vendas de terços">
-<meta name="theme-color" content="#4b3a8c">
+<meta name="theme-color" content="#4b2fb0">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
   <nav class="nav" id="nav">
-    <div class="brand"><img src="icon-192.png" alt=""><span id="brandName">Terços</span></div>
-    <a href="#inicio" data-r="inicio"><span class="ic">⌂</span><span>Início</span></a>
-    <a href="#vendas" data-r="vendas"><span class="ic">$</span><span>Vendas</span></a>
-    <a href="#producao" data-r="producao"><span class="ic">✚</span><span>Produção</span></a>
-    <a href="#estoque" data-r="estoque"><span class="ic">▤</span><span>Estoque</span></a>
-    <a href="#mais" data-r="mais"><span class="ic">☰</span><span>Cadastros</span></a>
+    <div class="brand"><img src="icon-192.png" alt=""><div><b id="brandName">Terços</b><small>Controle do negócio</small></div></div>
+    <a href="#inicio" data-r="inicio" data-ic="home"><span>Início</span></a>
+    <a href="#vendas" data-r="vendas" data-ic="bag"><span>Vendas</span></a>
+    <a href="#producao" data-r="producao" data-ic="sparkles"><span>Produção</span></a>
+    <a href="#estoque" data-r="estoque" data-ic="box"><span>Estoque</span></a>
+    <a href="#mais" data-r="mais" data-ic="grid"><span>Cadastros</span></a>
+    <div class="nav-foot">
+      <a class="sync" id="bkBadge" href="#backup"></a>
+      <button class="theme" id="themeBtn" type="button"></button>
+    </div>
   </nav>
   <main>
     <header class="top">
-      <button class="back" id="back" hidden aria-label="Voltar">‹</button>
+      <button class="back" id="back" hidden aria-label="Voltar"></button>
       <h1 id="title">Início</h1>
       <div class="top-act" id="topAct"></div>
     </header>
@@ -32,7 +39,7 @@
 </div>
 
 <dialog id="dlg">
-  <div class="dlg-head"><h2 id="dlgTitle"></h2><button class="x" id="dlgX" aria-label="Fechar">×</button></div>
+  <div class="dlg-head"><h2 id="dlgTitle"></h2><button class="x" id="dlgX" aria-label="Fechar"></button></div>
   <div id="dlgBody" class="dlg-body"></div>
   <div class="dlg-foot">
     <button class="btn danger ghost" id="dlgDel">Excluir</button>
