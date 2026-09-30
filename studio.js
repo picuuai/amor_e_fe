@@ -338,7 +338,9 @@ const TEMPLATES = {
 
 function fitCanvas(cv) {
   const box = cv.parentElement; if (!box) return;
-  const k = Math.min(box.clientWidth / cv.width, Math.max(320, innerHeight * 0.68) / cv.height);
+  // no celular a prévia fica fixa no topo, então é menor
+  const alt = innerWidth < 1000 ? Math.max(200, innerHeight * 0.34) : Math.max(320, innerHeight * 0.68);
+  const k = Math.min(box.clientWidth / cv.width, alt / cv.height);
   cv.style.width = Math.round(cv.width * k) + 'px'; cv.style.height = Math.round(cv.height * k) + 'px';
 }
 function drawPost(cv) {
@@ -401,8 +403,8 @@ function viewDivulgar() {
           ? `<button class="btn pri" data-s="share">${ic('share')}Postar / Compartilhar</button>`
           : `<button class="btn pri" data-s="publicar">${ic('instagram')}Publicar no Instagram</button>
              <button class="btn" data-s="share">${ic('share')}Compartilhar</button>`}
-        <button class="btn" data-s="download">${ic('download')}Baixar</button>
-        <button class="btn" data-s="copy">${ic('copy')}Copiar legenda</button>
+        <button class="btn" data-s="download" aria-label="Baixar imagem" title="Baixar imagem">${ic('download')}<span>Baixar</span></button>
+        <button class="btn" data-s="copy" aria-label="Copiar legenda" title="Copiar legenda">${ic('copy')}<span>Copiar legenda</span></button>
       </div>
       <div id="pubStatus"></div>
       <div class="ig-box compacto" style="margin-top:12px"></div>
@@ -420,7 +422,7 @@ function viewDivulgar() {
         </details>
         <button type="button" class="btn sm" data-s="usarFoto" style="margin-top:12px">${ic('check')}Usar esta foto no cadastro do terço</button>
       </div>
-      <div class="card"><div class="card-h">${ic('sparkles')}<h3>2. Modelo</h3></div>
+      <div class="card c-modelo"><div class="card-h">${ic('sparkles')}<h3>2. Modelo</h3></div>
         ${chips('estilo', ESTILOS, true)}
         ${chips('formato', FORMATOS, false)}
         <label class="chk" id="optTextos" ${s.estilo === 'original' ? '' : 'hidden'}><input type="checkbox" name="textosFoto" ${s.textosFoto ? 'checked' : ''}>Mostrar nome, preço e contatos sobre a foto</label>
@@ -588,7 +590,7 @@ function igBoxHTML(st, compacto = false) {
   const oc = st.ocupado;
   let msg;
   if (oc === 'login') msg = `<div class="alert info">${ic('instagram')}<div><b>Abrimos o Instagram numa janela.</b> Entre na conta por lá — ela fecha sozinha quando terminar.</div></div>`;
-  else if (oc === 'publicar') msg = `<div class="alert info">${ic('refresh')}<div>Publicando um post… não mexa na janela do Instagram.</div></div>`;
+  else if (oc === 'publicar') msg = `<div class="alert info">${ic('refresh')}<div>Publicando um post em segundo plano…</div></div>`;
   else if (oc === 'sair') msg = `<div class="alert info">${ic('refresh')}<div>Saindo da conta…</div></div>`;
   else if (st.logado === true) msg = `<div class="alert ok">${ic('check')}<div><b>Instagram conectado${st.usuario ? ` como @${esc(st.usuario)}` : ''}.</b>${compacto ? '' : ' Já está tudo pronto para publicar.'}</div></div>`;
   else if (st.logado === false) msg = `<div class="alert warn">${ic('alert')}<div><b>Instagram não conectado.</b> Clique em “Entrar no Instagram”.</div></div>`;
@@ -671,13 +673,14 @@ async function publicarInstagram(cv, btn) {
   try {
     const r = await fetch(POSTADOR + '/publicar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imagem: cv.toDataURL('image/jpeg', 0.92), legenda: s.legenda, formato: s.formato }),
+      body: JSON.stringify({ imagem: cv.toDataURL('image/jpeg', 0.92), legenda: s.legenda, formato: s.formato, titulo: s.titulo, oculto: true }),
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.erro || 'o postador recusou o pedido');
     const reg = { id: uid(), data: today(), produtoId: s.prodId, fotoId: s.fotoId, titulo: s.titulo, estilo: s.estilo, status: 'enviado' };
     (db.posts ||= []).push(reg); save();
-    setPub(`${ic('refresh')}<div>Enviado ao postador. O navegador vai abrir e publicar sozinho — não mexa nele até terminar.</div>`);
+    setPub(`${ic('refresh')}<div>Publicando em segundo plano. Pode continuar usando o app — o Windows avisa quando terminar.</div>`);
+    toast('Enviado! Você será avisado quando for publicado.');
     const fim = Date.now() + 5 * 60e3;
     while (Date.now() < fim) {
       await new Promise(ok => setTimeout(ok, 3000));
@@ -691,9 +694,9 @@ async function publicarInstagram(cv, btn) {
         setPub(`${ic('alert')}<div>O postador terminou mas não viu a confirmação. Confira no Instagram se o post apareceu.</div>`, 'warn'); return;
       }
       if (job.status === 'erro') { reg.status = 'erro'; save(); setPub(`${ic('alert')}<div>Não foi possível publicar: ${esc(job.erro || '')}</div>`, 'bad'); return; }
-      setPub(`${ic('refresh')}<div>${job.status === 'na fila' ? 'Na fila do postador…' : 'Publicando no Instagram… não mexa no navegador que abriu.'}</div>`);
+      setPub(`${ic('refresh')}<div>${job.status === 'na fila' ? 'Na fila do postador…' : 'Publicando em segundo plano… o Windows avisa quando terminar.'}</div>`);
     }
-    setPub(`${ic('alert')}<div>Demorou demais. Confira a janela do postador e o Instagram.</div>`, 'warn');
+    setPub(`${ic('alert')}<div>Está demorando mais que o normal. O Windows avisa quando terminar; confira também o Instagram.</div>`, 'warn');
   } catch (e) {
     setPub(`${ic('alert')}<div>Erro ao falar com o postador: ${esc(e.message)}</div>`, 'bad');
   } finally { btn.disabled = false; }

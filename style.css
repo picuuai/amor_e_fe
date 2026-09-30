@@ -291,6 +291,23 @@ input[type=range]{padding:0;border:0;background:none;accent-color:var(--pri);mar
 details{margin:4px 0 8px}
 summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--pri);margin-bottom:10px}
 .btn:disabled{opacity:.55;cursor:progress}
+.st-ctrl{display:flex;flex-direction:column}
+/* estúdio no celular: prévia fixa no topo, "Modelo" primeiro, botões fixos embaixo */
+@media (max-width:999px){
+  .studio{gap:12px;padding-bottom:84px}
+  .st-prev{position:sticky;top:0;z-index:6;margin:0 -16px}
+  .st-prev>.card{margin:0;padding:10px 12px 8px;border-radius:0 0 20px 20px;border-top:0;box-shadow:0 10px 24px -14px rgba(20,10,50,.45)}
+  .st-prev .hint,.st-prev .ig-box{display:none}
+  .st-prev #pubStatus .alert{margin:8px 0 0!important;padding:8px 12px;font-size:13px}
+  .st-actions{position:fixed;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom));z-index:9;display:flex;flex-wrap:nowrap;gap:8px;padding:8px 12px;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -8px 20px -12px rgba(20,10,50,.3)}
+  .st-actions .btn{padding:10px 12px}
+  .st-actions .btn.pri{flex:1}
+  .st-actions .btn:not(.pri) span{display:none}
+  .c-modelo{order:-1}
+  .studio .chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin-left:-4px;padding-left:4px;scrollbar-width:none}
+  .studio .chips .chip{flex:none}
+  .st-ctrl .card{margin-bottom:12px}
+}
 
 /* sincronização */
 .steps{margin:0;padding-left:22px;line-height:1.7}
