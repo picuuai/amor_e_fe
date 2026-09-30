@@ -61,6 +61,11 @@ const ICONS = {
   shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3"/><path d="M4 4v4h4M20 20v-4h-4"/>',
   scale: '<path d="M12 3v18M5 21h14M6 7h12"/><path d="m6 7-3 7a3 3 0 0 0 6 0zM18 7l-3 7a3 3 0 0 0 6 0z"/>',
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M18 6a8 8 0 0 1 0 12"/>',
+  instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/>',
+  share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
 };
 const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 
@@ -277,6 +282,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyThe
 const ROUTES = {
   inicio: ['Início', viewInicio], vendas: ['Vendas', viewVendas], producao: ['Produção', viewProducao],
   estoque: ['Estoque', viewEstoque], mais: ['Cadastros', viewMais],
+  galeria: ['Galeria de fotos', () => viewGaleria()],
+  divulgar: ['Criar post para o Instagram', () => viewDivulgar(), 'galeria'],
   produtos: ['Produtos e preços', viewProdutos, 'mais'], insumos: ['Insumos', viewInsumos, 'mais'],
   compras: ['Compras de insumos', viewCompras, 'mais'], clientes: ['Clientes', viewClientes, 'mais'],
   config: ['Configurações', viewConfig, 'mais'], backup: ['Backup e exportação', viewBackup, 'mais'],
@@ -298,6 +305,8 @@ function render() {
   $('#bkBadge').innerHTML = late ? `${ic('shield')}<span>Fazer backup</span>` : `${ic('shield')}<span>Backup em dia</span>`;
   $('#topAct').innerHTML = '';
   $('#view').innerHTML = fn();
+  if (r === 'divulgar') initStudio();
+  if (r === 'galeria') initGaleria();
 }
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
 const topActions = html => { $('#topAct').innerHTML = html; };
@@ -342,6 +351,8 @@ function viewInicio() {
   const alerts = [];
   if (backupAtrasado())
     alerts.push(['warn', 'shield', `${db.meta.ultimoBackup ? 'Último backup em ' + fdate(db.meta.ultimoBackup) : 'Você ainda não fez backup'}. <a href="#backup">Fazer agora</a>`]);
+  const naoPub = (db.galeria || []).filter(f => f.status === 'nova').length;
+  if (naoPub) alerts.push(['info', 'instagram', `${naoPub} foto(s) na galeria esperando publicação. <a href="#galeria">Ver galeria</a>`]);
   for (const p of produtosOrd()) {
     const e = estoqueProduto(p.id);
     if (e < 0) alerts.push(['bad', 'sparkles', `<b>${esc(p.nome)}</b>: faltam ${fmt(-e)} para entregar — produzir.`]);
@@ -368,6 +379,7 @@ function viewInicio() {
       <button class="btn light" data-act="novaVenda">${ic('plus')}Nova venda</button>
       <button class="btn glass" data-act="novaProducao">${ic('sparkles')}Produção</button>
       <button class="btn glass" data-act="novaCompra">${ic('cart')}Compra</button>
+      <a class="btn glass" href="#galeria">${ic('image')}Galeria</a>
     </div>
     <div class="hero-art">${art('hero', true)}</div>
   </section>
@@ -558,9 +570,13 @@ function formProducao(pr) {
       <div class="cell" style="margin-bottom:12px">${foto(get('produtos', pr.produtoId), 'md')}<div><b>${fmt(pr.qtd)}× ${esc(nomeProduto(pr.produtoId))}</b><div class="muted">${fdate(pr.data)} · custo ${brl(pr.custoUnit)} cada</div></div></div>
       <div class="tw"><table><thead><tr><th>Material usado</th><th class="n">Qtd</th></tr></thead><tbody>
       ${pr.consumo.map(c => `<tr><td>${esc(nomeInsumo(c.insumoId))}</td><td class="n">${fmt(c.qtd, 3)} ${esc(get('insumos', c.insumoId)?.unidade || '')}</td></tr>`).join('')}</tbody></table></div>
-      <p class="hint" style="margin-top:12px">Para corrigir, exclua e registre de novo. Excluir devolve os materiais ao estoque.</p>`,
+      <p class="hint" style="margin-top:12px">Para corrigir, exclua e registre de novo. Excluir devolve os materiais ao estoque.</p>
+      <button type="button" class="btn sm" data-f="divulgar">${ic('instagram')}Criar post deste terço</button>`,
     onOpen: root => {
-      if (!novo) return;
+      if (!novo) {
+        root.addEventListener('click', e => { if (e.target.closest('[data-f=divulgar]')) { dlg.close(); ACTIONS.divulgar(pr.produtoId); } });
+        return;
+      }
       const upd = () => {
         const p = get('produtos', F(root, 'produtoId')); const q = pn(F(root, 'qtd'));
         if (!p) return;
@@ -608,7 +624,7 @@ function viewEstoque() {
       <div class="pbody"><div class="pname">${esc(p.nome)}</div>
       <div class="pline" style="align-items:flex-end"><span><span class="stock-big">${fmt(e)}</span> pronto(s)</span><span>mín. ${fmt(p.estoqueMin)}</span></div>
       <div class="pline"><span>Dá para fazer</span><b>${pf == null ? '—' : fmt(pf)}</b></div>
-      <button class="btn sm" style="margin-top:8px" data-act="ajuste" data-id="produto:${p.id}">${ic('sliders')}Ajustar contagem</button></div></div>`;
+      <div class="bar" style="margin:8px 0 0;gap:6px"><button class="btn sm" data-act="ajuste" data-id="produto:${p.id}">${ic('sliders')}Ajustar</button><button class="btn sm" data-act="divulgar" data-id="${p.id}">${ic('instagram')}Divulgar</button></div></div></div>`;
   }).join('')}</div>
   <div class="card"><div class="card-h">${ic('layers')}<h3>Insumos</h3><a class="btn sm" href="#compras">${ic('cart')}Compras</a></div><div class="tw"><table>
     <thead><tr><th>Material</th><th class="n">Em estoque</th><th class="n">Mínimo</th><th class="n">Custo un.</th><th class="n">Valor</th><th></th><th></th></tr></thead><tbody>
@@ -684,6 +700,7 @@ function formProduto(p) {
           <div class="foto-btns">
             <label class="btn sm" style="margin:0">${ic('camera')}Foto<input type="file" name="fotoFile" accept="image/*" hidden></label>
             <button type="button" class="btn sm ghost" data-f="semFoto">Tirar</button>
+            ${novo ? '' : `<button type="button" class="btn sm" data-f="divulgar">${ic('instagram')}Criar post</button>`}
           </div>
         </div>
         <div class="g2">
@@ -733,6 +750,7 @@ function formProduto(p) {
         if (f === 'rm') { t.closest('.row').remove(); upd(); }
         if (f === 'usar') { root.querySelector('[name=preco]').value = iv(root._sug); upd(); }
         if (f === 'semFoto') { root._foto = ''; $('#fotoPrev', root).innerHTML = foto({ id: p.id }); }
+        if (f === 'divulgar') { dlg.close(); ACTIONS.divulgar(p.id); }
       });
       upd(); root._read = read;
     },
@@ -913,7 +931,7 @@ function viewConfig() {
 function viewBackup() {
   const late = backupAtrasado();
   return `<div class="card"><div class="card-h">${ic('shield')}<h3>Backup</h3><span class="tag ${late ? 'warn' : 'ok'}">${db.meta.ultimoBackup ? 'último em ' + fdate(db.meta.ultimoBackup) : 'nunca feito'}</span></div>
-    <p class="hint" style="margin:0 0 14px">Os dados ficam guardados neste navegador, neste computador. Baixe o backup toda semana e guarde no OneDrive: se limpar o navegador ou trocar de computador, é só restaurar.</p>
+    <p class="hint" style="margin:0 0 14px">Os dados ficam guardados neste navegador, neste computador. Baixe o backup toda semana e guarde no OneDrive: se limpar o navegador ou trocar de computador, é só restaurar. O backup inclui as fotos da galeria.</p>
     <div class="bar"><button class="btn pri" data-act="exportJson">${ic('download')}Baixar backup</button><button class="btn" data-act="importJson">${ic('upload')}Restaurar backup…</button></div></div>
   <div class="card"><div class="card-h">${ic('sheet')}<h3>Exportar para Excel</h3></div>
     <div class="bar"><button class="btn" data-act="csvVendas">${ic('bag')}Vendas</button><button class="btn" data-act="csvEstoque">${ic('box')}Estoque</button><button class="btn" data-act="csvProdutos">${ic('tag')}Produtos e preços</button></div></div>
@@ -939,7 +957,10 @@ $('#fileImport').addEventListener('change', async e => {
     const data = JSON.parse(await f.text());
     if (!data.produtos || !data.insumos || !data.vendas) throw new Error('arquivo não é um backup deste app');
     if (!confirm(`Substituir todos os dados atuais pelo backup "${f.name}"?`)) return;
-    db = data; save(); render(); toast('Backup restaurado.');
+    const fotos = data._fotosGaleria; delete data._fotosGaleria;
+    db = data; save();
+    const n = fotos ? await restaurarFotos(fotos) : 0;
+    render(); toast('Backup restaurado' + (n ? ` com ${n} foto(s).` : '.'));
   } catch (err) { toast('Não foi possível importar: ' + err.message); }
 });
 
@@ -950,6 +971,10 @@ const ACTIONS = {
   novaProducao: () => db.produtos.length ? formProducao() : toast('Cadastre um produto primeiro.'),
   editProducao: id => formProducao(get('producoes', id)),
   ajuste: ref => formAjuste(ref),
+  divulgar: id => {
+    if (id && id !== studio.prodId) { studio.prodId = id; studio.src = null; }
+    if (location.hash === '#divulgar') render(); else location.hash = 'divulgar';
+  },
   novoProduto: () => formProduto(),
   editProduto: id => formProduto(get('produtos', id)),
   novoInsumo: () => formInsumo(),
@@ -972,9 +997,12 @@ const ACTIONS = {
     else toast('Configurações salvas.');
     save(); render();
   },
-  exportJson: () => {
+  exportJson: async () => {
+    const n = (db.galeria || []).length;
+    if (n) toast(`Preparando backup com ${n} foto(s)…`);
+    const fotos = n ? await fotosParaBackup() : {};
     db.meta.ultimoBackup = today(); save();
-    download(`tercos-backup-${today()}.json`, JSON.stringify(db), 'application/json');
+    download(`tercos-backup-${today()}.json`, JSON.stringify({ ...db, _fotosGaleria: fotos }), 'application/json');
     render();
   },
   importJson: () => $('#fileImport').click(),
@@ -1008,11 +1036,14 @@ const ACTIONS = {
 };
 
 /* ---------------- início ---------------- */
-$$('.nav a[data-ic]').forEach(a => a.insertAdjacentHTML('afterbegin', ic(a.dataset.ic)));
-$('#back').innerHTML = ic('back');
-$('#dlgX').innerHTML = ic('x');
-applyTheme();
-load();
-render();
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
-if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+// espera o studio.js carregar antes de desenhar a primeira tela
+document.addEventListener('DOMContentLoaded', () => {
+  $$('.nav a[data-ic]').forEach(a => a.insertAdjacentHTML('afterbegin', ic(a.dataset.ic)));
+  $('#back').innerHTML = ic('back');
+  $('#dlgX').innerHTML = ic('x');
+  applyTheme();
+  load();
+  render();
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+});
