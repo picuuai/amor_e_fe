@@ -273,7 +273,8 @@ const Sync = (() => {
   // motivo: 'revogado' (desconectado pelo principal), 'chave' (chave trocada) ou 'saiu' (desconectou por conta própria)
   async function apagarEsteAparelho(motivo = 'revogado') {
     const eu = meuAparelho();
-    if (motivo !== 'chave') try { await alterarAparelhos(l => { if (l[eu.id]) l[eu.id].removidoEm = new Date().toISOString(); return l; }); } catch { }
+    // sai da lista de aparelhos (ao ser desconectado, o registro some)
+    if (motivo !== 'chave') try { await alterarAparelhos(l => { delete l[eu.id]; return l; }); } catch { }
     cfg = null; clearTimeout(timer);
     for (const k of [KEY, CFG_KEY, BASE_KEY]) try { localStorage.removeItem(k); } catch { }
     try { await FotoDB.apagarTudo(); } catch { }
@@ -289,12 +290,16 @@ const Sync = (() => {
   async function carregarAparelhos() {
     const box = $('#devList'); if (!box) return;
     try {
-      const { lista } = await lerAparelhos(), eu = meuAparelho().id;
+      let { lista } = await lerAparelhos();
+      const eu = meuAparelho().id;
+      // limpa registros de aparelhos que já concluíram a desconexão
+      if (Object.values(lista).some(d => d.removidoEm)) {
+        lista = await alterarAparelhos(l => { for (const [id, d] of Object.entries(l)) if (d.removidoEm) delete l[id]; return l; });
+      }
       const devs = Object.entries(lista).sort((a, b) => (b[1].ultimoAcesso || '').localeCompare(a[1].ultimoAcesso || ''));
       box.innerHTML = devs.length ? `<div class="list">${devs.map(([id, d]) => {
         let st, acoes = '';
-        if (d.removidoEm) { st = `<span class="tag bad">desconectado ${dataHora(d.removidoEm)}</span>`; acoes = `<button class="btn sm" data-dev="remover" data-id="${id}">Tirar da lista</button>`; }
-        else if (d.revogado) { st = `<span class="tag warn">desconexão pendente</span> <span class="li-s" style="display:inline">sai quando abrir o app com internet</span>`; acoes = `<button class="btn sm" data-dev="remover" data-id="${id}">Tirar da lista</button>`; }
+        if (d.revogado) { st = `<span class="tag warn">desconexão pendente</span> <span class="li-s" style="display:inline">sai quando abrir o app com internet</span>`; acoes = `<button class="btn sm" data-dev="remover" data-id="${id}">Tirar da lista</button>`; }
         else { st = `último acesso ${haQuanto(d.ultimoAcesso)} · conectado em ${dataHora(d.conectadoEm)}`; if (id !== eu) acoes = `<button class="btn sm" data-dev="renomear" data-id="${id}">Renomear</button><button class="btn sm danger" data-dev="revogar" data-id="${id}">Desconectar</button>`; else acoes = `<button class="btn sm" data-dev="renomear" data-id="${id}">Renomear</button>`; }
         return `<div class="li" style="cursor:default"><div class="av ${d.tipo === 'celular' ? 't-rose' : 't-blue'}">${ic(d.tipo === 'celular' ? 'phone' : 'monitor')}</div>
           <div class="li-main"><div class="li-t" style="white-space:normal">${esc(d.nome || 'Aparelho')} ${id === eu ? '<span class="tag">este aparelho</span>' : ''} ${d.principal ? '<span class="tag ok">principal</span>' : ''}</div>
@@ -328,7 +333,7 @@ const Sync = (() => {
     if (!w.ok && w.status !== 404) throw erroGH(w, await w.text());
     cfg.token = token; gravarCfg();
     // os outros aparelhos passam a ter a chave antiga (inválida); marca como desconectados
-    await alterarAparelhos(l => { for (const [id, d] of Object.entries(l)) if (id !== meuAparelho().id && !d.removidoEm) { d.revogado = true; d.removidoEm = new Date().toISOString(); } return l; });
+    await alterarAparelhos(l => { for (const id of Object.keys(l)) if (id !== meuAparelho().id) delete l[id]; return l; });
   }
 
   /* ---------- conectar / desconectar ---------- */
