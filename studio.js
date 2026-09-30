@@ -244,28 +244,23 @@ const TEMPLATES = {
     g.restore();
   },
 
+  // foto grande (≈75% do post) com cantos arredondados e filete dourado; textos numa faixa creme embaixo
   elegante(g, W, H, img) {
-    const u = W / 1080, s = studio, c = divCfg();
+    const u = W / 1080, s = studio;
     g.fillStyle = '#f6eee2'; g.fillRect(0, 0, W, H);
     const rnd = mulberry32(7);
     for (let i = 0; i < W * H / 260; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(120,90,50,.04)' : 'rgba(255,255,255,.4)'; g.fillRect(rnd() * W, rnd() * H, 2 * u, 2 * u); }
-    g.strokeStyle = '#c9a45c'; g.lineWidth = 2 * u; g.strokeRect(34 * u, 34 * u, W - 68 * u, H - 68 * u);
-    g.lineWidth = 1 * u; g.strokeRect(46 * u, 46 * u, W - 92 * u, H - 92 * u);
-    g.fillStyle = '#a8792a'; font(g, 700, 26 * u); g.textBaseline = 'middle';
-    spaced(g, (db.params.nome || '').toUpperCase(), W / 2, 104 * u, 9 * u);
-    const bottom = Math.max(370 * u, H * 0.31), x = 130 * u, w = W - 260 * u, y = 150 * u, h = H - y - bottom;
-    const r = w / 2;   // semicírculo inteiro: o topo do arco fica exatamente em "y" (não cobre a marca)
-    const arch = (o = 0) => { g.beginPath(); g.moveTo(x - o, y + h + o); g.lineTo(x - o, y + r); g.arc(x + w / 2, y + r, w / 2 + o, Math.PI, 0); g.lineTo(x + w + o, y + h + o); g.closePath(); };
-    g.save(); g.shadowColor = 'rgba(90,60,20,.3)'; g.shadowBlur = 50 * u; g.shadowOffsetY = 18 * u; arch(); g.fillStyle = '#fff'; g.fill(); g.restore();
-    photo(g, img, x, y, w, h, () => arch());
-    arch(16 * u); g.strokeStyle = '#c9a45c'; g.lineWidth = 3 * u; g.stroke();
-    if (s.selo) selo(g, s.selo, x + w - 30 * u, y + h - 50 * u, 92 * u, '#b8893a', '#fff');
-    const items = [tItem(g, s.titulo, w + 40 * u, 72 * u, 40 * u, 2, sz => font(g, 700, sz, 'Playfair Display'), '#3b2a1a', 'center', W / 2)];
-    if (c.frase) items.push(tItem(g, c.frase, w + 40 * u, 36 * u, 24 * u, 2, sz => font(g, 500, sz, 'Playfair Display', 'italic'), '#80613f', 'center', W / 2));
-    if (s.mostrarPreco && s.preco > 0) items.push(pItem(g, brl(s.preco), 74 * u, '#b8893a', '#fff', () => font(g, 800, 38 * u), 'center', W / 2, 34 * u));
-    const cta = [c.cta, contatos()].filter(Boolean).join('   •   ');
-    if (cta) items.push(tItem(g, cta, W - 180 * u, 26 * u, 18 * u, 2, sz => font(g, 600, sz), '#80613f', 'center', W / 2));
-    stack(items, y + h + 34 * u, H - 64 * u, 16 * u);
+    g.strokeStyle = '#c9a45c'; g.lineWidth = 1.5 * u; g.strokeRect(20 * u, 20 * u, W - 40 * u, H - 40 * u);
+    const bottom = Math.max(300 * u, H * 0.22), x = 46 * u, y = 46 * u, w = W - 92 * u, h = H - y - bottom;
+    const moldura = () => { g.beginPath(); g.roundRect(x, y, w, h, 18 * u); };
+    g.save(); g.shadowColor = 'rgba(90,60,20,.3)'; g.shadowBlur = 36 * u; g.shadowOffsetY = 12 * u; moldura(); g.fillStyle = '#fff'; g.fill(); g.restore();
+    photo(g, img, x, y, w, h, moldura);
+    g.beginPath(); g.roundRect(x + 12 * u, y + 12 * u, w - 24 * u, h - 24 * u, 10 * u);
+    g.strokeStyle = 'rgba(255,238,200,.85)'; g.lineWidth = 2 * u; g.stroke();
+    if (s.selo) selo(g, s.selo, x + w - 64 * u, y + h - 8 * u, 76 * u, '#b8893a', '#fff');
+    textosRodape(g, u, W, y + h + 22 * u, H - 30 * u, {
+      marca: '#a8792a', titulo: '#3b2a1a', frase: '#80613f', pill: '#b8893a', pillTxt: '#fff', texto: '#80613f',
+    });
   },
 
   moderno(g, W, H, img) {
@@ -335,25 +330,44 @@ const TEMPLATES = {
       g.fillStyle = 'rgba(241,211,138,.8)'; g.beginPath();
       g.moveTo(x, y - r); g.quadraticCurveTo(x, y, x + r, y); g.quadraticCurveTo(x, y, x, y + r); g.quadraticCurveTo(x, y, x - r, y); g.quadraticCurveTo(x, y, x, y - r); g.fill();
     }
-    g.fillStyle = '#e8c875'; font(g, 700, 26 * u); g.textBaseline = 'middle';
-    spaced(g, (db.params.nome || '').toUpperCase(), W / 2, 96 * u, 9 * u);
-    const bottom = Math.max(390 * u, H * 0.32), avail = H - 160 * u - bottom;
-    const d = Math.min(W - 240 * u, avail), cx = W / 2, cy = 150 * u + (avail - d) / 2 + d / 2;
-    const glow = g.createRadialGradient(cx, cy, d * 0.3, cx, cy, d * 0.8);
-    glow.addColorStop(0, 'rgba(241,211,138,.38)'); glow.addColorStop(1, 'rgba(241,211,138,0)');
-    g.fillStyle = glow; g.fillRect(0, cy - d, W, d * 2);
-    photo(g, img, cx - d / 2, cy - d / 2, d, d, () => { g.beginPath(); g.arc(cx, cy, d / 2, 0, Math.PI * 2); });
-    g.strokeStyle = '#e8c875'; g.lineWidth = 8 * u; g.beginPath(); g.arc(cx, cy, d / 2 + 4 * u, 0, Math.PI * 2); g.stroke();
-    g.globalAlpha = 0.55; g.lineWidth = 2 * u; g.beginPath(); g.arc(cx, cy, d / 2 + 24 * u, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1;
-    if (s.selo) selo(g, s.selo, cx + d * 0.36, cy + d * 0.36, 88 * u, '#e8c875', '#0a1430');
-    const items = [tItem(g, s.titulo, W - 180 * u, 70 * u, 40 * u, 2, sz => font(g, 700, sz, 'Playfair Display'), '#f3d98f', 'center', W / 2)];
-    if (c.frase) items.push(tItem(g, c.frase, W - 180 * u, 34 * u, 22 * u, 2, sz => font(g, 500, sz, 'Playfair Display', 'italic'), '#d6dcf0', 'center', W / 2));
-    if (s.mostrarPreco && s.preco > 0) items.push(pItem(g, brl(s.preco), 72 * u, '#e8c875', '#0a1430', () => font(g, 800, 38 * u), 'center', W / 2, 34 * u));
-    const cta = [c.cta, contatos()].filter(Boolean).join('   •   ');
-    if (cta) items.push(tItem(g, cta, W - 180 * u, 26 * u, 18 * u, 2, sz => font(g, 600, sz), '#b9c3e3', 'center', W / 2));
-    stack(items, cy + d / 2 + 50 * u, H - 64 * u, 16 * u);
+    // foto grande num retângulo com borda dourada brilhante e estrelinhas nos cantos
+    const bottom = Math.max(300 * u, H * 0.22), x = 58 * u, y = 58 * u, w = W - 116 * u, h = H - y - bottom;
+    const moldura = (o = 0) => { g.beginPath(); g.roundRect(x - o, y - o, w + 2 * o, h + 2 * o, 26 * u + o); };
+    g.save(); g.shadowColor = 'rgba(241,211,138,.55)'; g.shadowBlur = 60 * u; moldura(); g.fillStyle = '#0a1430'; g.fill(); g.restore();
+    photo(g, img, x, y, w, h, () => moldura());
+    moldura(4 * u); g.strokeStyle = '#e8c875'; g.lineWidth = 5 * u; g.stroke();
+    g.globalAlpha = 0.5; moldura(16 * u); g.lineWidth = 1.5 * u; g.stroke(); g.globalAlpha = 1;
+    const brilho = (bx, by, r) => { g.fillStyle = '#f7e2a4'; g.beginPath(); g.moveTo(bx, by - r); g.quadraticCurveTo(bx, by, bx + r, by); g.quadraticCurveTo(bx, by, bx, by + r); g.quadraticCurveTo(bx, by, bx - r, by); g.quadraticCurveTo(bx, by, bx, by - r); g.fill(); };
+    for (const [bx, by] of [[x - 16 * u, y - 16 * u], [x + w + 16 * u, y - 16 * u], [x - 16 * u, y + h + 16 * u], [x + w + 16 * u, y + h + 16 * u]]) brilho(bx, by, 22 * u);
+    if (s.selo) selo(g, s.selo, x + w - 70 * u, y + h - 6 * u, 76 * u, '#e8c875', '#0a1430');
+    textosRodape(g, u, W, y + h + 30 * u, H - 30 * u, {
+      marca: '#e8c875', titulo: '#f3d98f', frase: '#d6dcf0', pill: '#e8c875', pillTxt: '#0a1430', texto: '#b9c3e3',
+    });
   },
 };
+
+// faixa de textos embaixo da foto (Elegante e Celestial): marca, nome, frase, preço + chamada, contatos
+function textosRodape(g, u, W, topo, base, cor) {
+  const s = studio, c = divCfg(), maxW = W - 160 * u, items = [];
+  items.push({ h: 24 * u, draw: y0 => { g.fillStyle = cor.marca; font(g, 700, 19 * u); g.textBaseline = 'top'; spaced(g, (db.params.nome || '').toUpperCase(), W / 2, y0, 8 * u); } });
+  items.push(tItem(g, s.titulo, maxW, 56 * u, 34 * u, 1, sz => font(g, 700, sz, 'Playfair Display'), cor.titulo, 'center', W / 2));
+  if (c.frase) items.push(tItem(g, c.frase, maxW, 26 * u, 18 * u, 1, sz => font(g, 500, sz, 'Playfair Display', 'italic'), cor.frase, 'center', W / 2));
+  const temPreco = s.mostrarPreco && s.preco > 0;
+  if (temPreco || c.cta) items.push({
+    h: 50 * u, draw: y0 => {
+      font(g, 800, 28 * u); const pw = temPreco ? g.measureText(brl(s.preco)).width + 44 * u : 0;
+      let sz = 22 * u; font(g, 600, sz);
+      const esp = pw && c.cta ? 18 * u : 0;
+      while (c.cta && g.measureText(c.cta).width > maxW - pw - esp && sz > 14 * u) { sz -= 1; font(g, 600, sz); }
+      const tw = c.cta ? g.measureText(c.cta).width : 0;
+      let x0 = W / 2 - (pw + esp + tw) / 2;
+      if (temPreco) { font(g, 800, 28 * u); pill(g, brl(s.preco), x0, y0, 50 * u, cor.pill, cor.pillTxt, 'left', 22 * u); x0 += pw + esp; }
+      if (c.cta) { font(g, 600, sz); g.fillStyle = cor.texto; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(c.cta, x0, y0 + 25 * u); }
+    },
+  });
+  if (contatos()) items.push(tItem(g, contatos(), maxW, 21 * u, 14 * u, 1, sz => font(g, 600, sz), cor.texto, 'center', W / 2));
+  stack(items, topo, base, 9 * u);
+}
 
 function fitCanvas(cv) {
   const box = cv.parentElement; if (!box) return;
