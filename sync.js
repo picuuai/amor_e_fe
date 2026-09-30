@@ -348,6 +348,8 @@ const Sync = (() => {
     if (rem && temDadosLocais() && !confirm('Já existem dados na nuvem.\n\nOs dados deste aparelho serão SUBSTITUÍDOS pelos da nuvem. Continuar?')) return false;
     cfg = { ...novo, principal }; gravarCfg();
     try { localStorage.removeItem(BASE_KEY); } catch { }
+    // cada conexão é um registro novo: um aparelho desconectado antes pode ser liberado de novo pelo QR
+    try { localStorage.setItem(DEV_KEY, JSON.stringify({ id: uid(), nome: meuAparelho().nome })); } catch { }
     ultimaVerif = 0;
     await sincronizar();
     return true;
