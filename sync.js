@@ -205,6 +205,24 @@ const Sync = (() => {
     } finally { fotosRodando = false; }
   }
 
+  // descobre por que o repositório não aparece: chave inválida, dono diferente ou repositório não liberado na chave
+  async function diagnosticar(c) {
+    const api = p => fetch('https://api.github.com' + p, { cache: 'no-store', headers: { Authorization: `Bearer ${c.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } });
+    try {
+      const u = await api('/user');
+      if (u.status === 401) return 'a chave foi recusada pelo GitHub (copiada pela metade, apagada ou vencida). Gere uma nova e cole de novo.';
+      const login = u.ok ? (await u.json()).login : '';
+      const dono = c.repo.split('/')[0];
+      if (login && login.toLowerCase() !== dono.toLowerCase()) return `a chave é da conta "${login}", mas o repositório informado é de "${dono}". Use ${login}/amor_e_fe_dados ou crie a chave na conta ${dono}.`;
+      const rr = await api('/user/repos?per_page=100&sort=updated');
+      const nomes = rr.ok ? (await rr.json()).map(x => x.full_name) : [];
+      if (!nomes.length) return 'a chave não tem acesso a nenhum repositório. Crie uma chave nova e, em "Repository access", escolha "Only select repositories" e marque amor_e_fe_dados (o repositório precisa existir antes de criar a chave).';
+      return `a chave só enxerga: ${nomes.join(', ')}. Confira o nome do repositório (sem espaços, com _ ) ou crie uma chave nova marcando amor_e_fe_dados em "Only select repositories".`;
+    } catch {
+      return 'repositório não encontrado (confira o nome e se a chave tem acesso a ele)';
+    }
+  }
+
   /* ---------- conectar / desconectar ---------- */
   const temDadosLocais = () => db.vendas.length || db.clientes.length || (db.galeria || []).length || db.producoes.length > 1 || db.compras.length > 15;
   async function conectar(repo, token) {
@@ -214,6 +232,7 @@ const Sync = (() => {
     if (!token) throw new Error('cole a chave do GitHub');
     const novo = { repo, token, fotos: {} };
     const r = await gh('', {}, novo);
+    if (r.status === 404 || r.status === 401) throw new Error(await diagnosticar(novo));
     if (!r.ok) throw erroGH(r, await r.text());
     const info = await r.json();
     if (!info.private) throw new Error('o repositório precisa ser PRIVADO (os dados do negócio ficariam públicos)');
@@ -318,7 +337,12 @@ const Sync = (() => {
     if (a === 'conectar') {
       b.disabled = true; b.textContent = 'Conectando…';
       try { if (await conectar($('#syRepo').value, $('#syToken').value)) { toast('Conectado! Agora conecte o celular pelo QR Code.'); render(); } }
-      catch (err) { toast('Não foi possível conectar: ' + err.message); }
+      catch (err) {
+        // mensagem fica na tela (o aviso rápido some antes de dar para ler)
+        let el = $('#syErro');
+        if (!el) { b.insertAdjacentHTML('afterend', '<div id="syErro" class="alert bad" style="margin-top:12px"></div>'); el = $('#syErro'); }
+        el.innerHTML = `${ic('alert')}<div><b>Não foi possível conectar:</b> ${esc(err.message)}</div>`;
+      }
       finally { b.disabled = false; b.innerHTML = `${ic('check')}Conectar`; }
     }
   });
