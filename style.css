@@ -310,6 +310,13 @@ body.locked main{padding-bottom:40px}
 .lock>p{margin:0 0 20px}
 .lock-ic{display:inline-grid;place-items:center;width:84px;height:84px;border-radius:24px;background:var(--soft);color:var(--pri)}
 .lock-setup{text-align:left;margin-top:18px}
+.pill-cam{display:inline-flex;align-items:center;gap:10px;padding:15px 30px;margin:4px 0 24px;border:0;border-radius:999px;background:linear-gradient(135deg,var(--pri-2),var(--pri));color:#fff;font-weight:800;font-size:17px;cursor:pointer;box-shadow:0 14px 34px -12px rgba(91,63,196,.7);transition:transform .12s,filter .15s}
+.pill-cam:hover{filter:brightness(1.07)}
+.pill-cam:active{transform:scale(.97)}
+.pill-cam .i{width:24px;height:24px}
+.scan{position:relative;max-width:420px;aspect-ratio:1;margin:0 auto;border-radius:18px;overflow:hidden;background:#000}
+.scan video{width:100%;height:100%;object-fit:cover;display:block}
+.scan-frame{position:absolute;inset:16%;border:3px solid #fff;border-radius:20px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
 .lock-setup summary{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:12px}
 
 /* diálogo */

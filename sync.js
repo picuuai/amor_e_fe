@@ -441,16 +441,92 @@ const Sync = (() => {
       <div class="lock-ic">${ic('shield', 'big')}</div>
       <h2>Aparelho não autorizado</h2>
       <p class="muted">Este app só abre em aparelhos liberados pelo computador principal.</p>
+      <button class="pill-cam" data-sync="scan">${ic('camera')}Ler QR Code</button>
       <div class="card" style="text-align:left">
         <b>Para liberar este aparelho:</b>
         <ol class="steps" style="margin-top:8px">
           <li>No computador principal, abra <b>Cadastros → Computador e celular</b>.</li>
           <li>Clique em <b>Conectar o celular</b>.</li>
-          <li>Aponte a <b>câmera</b> deste aparelho para o QR Code e toque no link.</li>
+          <li>Aqui, toque em <b>Ler QR Code</b> e aponte para o código na tela do computador.</li>
         </ol>
       </div>
       <details class="lock-setup"><summary>Sou o dono e quero configurar este aparelho como computador principal</summary>${setupHTML()}</details>
     </div>`;
+  }
+
+  /* ---------- leitor de QR Code (câmera ou foto) ---------- */
+  const carregarScript = src => new Promise((ok, err) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = err; document.head.appendChild(s); });
+  // usa o leitor nativo do navegador (Android) ou a biblioteca jsQR como alternativa
+  async function decodificador() {
+    if ('BarcodeDetector' in window) {
+      try {
+        if ((await BarcodeDetector.getSupportedFormats()).includes('qr_code')) {
+          const bd = new BarcodeDetector({ formats: ['qr_code'] });
+          return async src => (await bd.detect(src))[0]?.rawValue;
+        }
+      } catch { }
+    }
+    if (!window.jsQR) await carregarScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js');
+    const c = document.createElement('canvas'), g = c.getContext('2d', { willReadFrequently: true });
+    return async src => {
+      const w = src.videoWidth || src.naturalWidth || src.width, h = src.videoHeight || src.naturalHeight || src.height;
+      if (!w || !h) return null;
+      const k = Math.min(1, 900 / Math.max(w, h));
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      g.drawImage(src, 0, 0, c.width, c.height);
+      return jsQR(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height)?.data;
+    };
+  }
+  function lerQR() {
+    let stream = null, parar = false;
+    modal({
+      title: 'Ler QR Code',
+      body: `<div class="scan"><video playsinline muted></video><div class="scan-frame"></div></div>
+        <p class="hint" style="text-align:center;margin:12px 0">Aponte para o QR Code na tela do computador principal.</p>
+        <div id="scanMsg"></div>
+        <div class="bar" style="justify-content:center;margin:0"><label class="btn sm" style="margin:0">${ic('image')}Usar uma foto do QR Code<input type="file" id="scanFoto" accept="image/*" hidden></label></div>`,
+      onOpen: async root => {
+        const video = $('video', root), msgEl = $('#scanMsg', root);
+        const aviso = (t, tom = 'warn') => { msgEl.innerHTML = `<div class="alert ${tom}">${ic('alert')}<div>${t}</div></div>`; };
+        dlg.addEventListener('close', () => { parar = true; stream?.getTracks().forEach(t => t.stop()); }, { once: true });
+        const tratar = texto => {
+          const m = String(texto || '').match(/#conectar=([^&\s]+)/);
+          if (!m) { if (texto) aviso('Este QR Code não é o de conexão do app. Use o que aparece em “Conectar o celular”.'); return false; }
+          parar = true; dlg.close(); conectarPorCodigo(m[1]); return true;
+        };
+        let dec;
+        try { dec = await decodificador(); } catch { aviso('Não foi possível carregar o leitor (sem internet?).', 'bad'); return; }
+        $('#scanFoto', root).onchange = async e => {
+          const f = e.target.files[0]; if (!f) return;
+          try { if (!tratar(await dec(await blobToImage(f)))) aviso('Não encontrei um QR Code nesta foto. Tente de novo, bem de frente para a tela.'); }
+          catch { aviso('Não foi possível ler esta foto.'); }
+        };
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+          if (parar) { stream.getTracks().forEach(t => t.stop()); return; }
+          video.srcObject = stream; await video.play();
+        } catch {
+          aviso('Não foi possível abrir a câmera. Permita o acesso à câmera nas configurações do navegador, ou use uma foto do QR Code.');
+          video.parentElement.hidden = true; return;
+        }
+        const tick = async () => {
+          if (parar) return;
+          try { if (tratar(await dec(video))) return; } catch { }
+          setTimeout(tick, 250);
+        };
+        tick();
+      },
+    });
+  }
+  function conectarPorCodigo(codigo) {
+    try {
+      const { r, t } = JSON.parse(atob(decodeURIComponent(codigo)));
+      conectandoQR = true; render();
+      conectar(r, t, false)
+        .then(ok => { if (ok) toast('Aparelho conectado! Os dados foram baixados.'); })
+        .catch(err => toast('Não foi possível conectar: ' + err.message))
+        .finally(() => { conectandoQR = false; render(); });
+    } catch { toast('Código de conexão inválido.'); }
   }
 
   async function mostrarQR() {
@@ -464,8 +540,7 @@ const Sync = (() => {
       title: 'Conectar o celular',
       body: `<div class="qr">${qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true })}</div>
         <ol class="steps" style="margin-top:14px">
-          <li>Abra a <b>câmera</b> do celular e aponte para o código.</li>
-          <li>Toque no link que aparecer: o app abre já conectado e baixa os dados.</li>
+          <li>No celular, abra o app e toque em <b>Ler QR Code</b> (ou use a câmera do celular e toque no link).</li>
           <li>No menu do navegador do celular, escolha <b>Adicionar à tela inicial</b> (ou <b>Instalar app</b>).</li>
         </ol>
         <div class="alert warn" style="margin-top:12px">${ic('shield')}<div>Este código dá acesso aos dados do negócio. Não mostre nem envie para outras pessoas.</div></div>`,
@@ -478,6 +553,7 @@ const Sync = (() => {
     const b = e.target.closest('[data-sync]'); if (!b) return;
     const a = b.dataset.sync;
     if (a === 'devs') carregarAparelhos();
+    if (a === 'scan') lerQR();
     if (a === 'trocar') {
       b.disabled = true;
       try { await trocarChave($('#syNova').value); toast('Chave trocada. Agora apague a chave antiga no GitHub e reconecte os outros aparelhos pelo QR Code.'); render(); }
@@ -517,14 +593,7 @@ const Sync = (() => {
     const m = location.hash.match(/^#conectar=(.+)$/);
     if (m) {
       history.replaceState(null, '', location.pathname + location.search + '#inicio'); // tira a chave da barra de endereço
-      try {
-        const { r, t } = JSON.parse(atob(decodeURIComponent(m[1])));
-        conectandoQR = true;
-        conectar(r, t, false)
-          .then(ok => { if (ok) toast('Aparelho conectado! Os dados foram baixados.'); })
-          .catch(err => toast('Não foi possível conectar: ' + err.message))
-          .finally(() => { conectandoQR = false; render(); });
-      } catch { toast('Código de conexão inválido.'); }
+      setTimeout(() => conectarPorCodigo(m[1]), 0);
     }
     setInterval(() => { if (cfg && document.visibilityState === 'visible') agendar(0); }, 60000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') agendar(0); });
