@@ -454,10 +454,8 @@ function viewDivulgar() {
       <div class="ig-box compacto" style="margin-top:12px"></div>
     </div></div>
     <div class="st-ctrl">
-      <div class="card"><div class="card-h">${ic('camera')}<h3>1. Foto</h3></div>
+      <div class="card"><div class="card-h">${ic('camera')}<h3>1. Ajustes da foto</h3></div>
         <label>Terço<select name="prod">${opts(produtosOrd(), s.prodId)}</select></label>
-        <div id="stStrip">${stripHTML()}</div>
-        <div class="bar"><label class="btn" style="margin:0">${ic('image')}Carregar foto nova<input type="file" name="file" accept="image/*" hidden></label><span class="muted" id="stSrc" style="font-size:13px"></span></div>
         <div class="zoom-row">${rng('zoom', 'Zoom (%)', 30, 250)}<button type="button" class="btn sm" data-s="encaixar">${ic('image')}Foto inteira</button></div>
         <p class="hint" style="margin:-6px 0 12px">Menos de 100% = a foto diminui e cabe inteira no modelo (o fundo vira a própria foto desfocada).</p>
         <label class="chk"><input type="checkbox" name="auto" ${s.auto ? 'checked' : ''}>Realce automático (luz, cores e contraste)</label>
@@ -466,7 +464,6 @@ function viewDivulgar() {
           ${rng('brilho', 'Brilho', -50, 50)}${rng('contraste', 'Contraste', -50, 50)}${rng('saturacao', 'Cores', -50, 50)}${rng('calor', 'Tom quente', -50, 50)}
           <button type="button" class="btn sm" data-s="resetAdj">Zerar ajustes</button>
         </details>
-        <button type="button" class="btn sm" data-s="usarFoto" style="margin-top:12px">${ic('check')}Usar esta foto no cadastro do terço</button>
       </div>
       <div class="card c-modelo"><div class="card-h">${ic('sparkles')}<h3>2. Modelo</h3></div>
         ${chips('estilo', ESTILOS, true)}
@@ -499,12 +496,9 @@ async function initStudio() {
   const s = studio, c = divCfg(), cv = $('#stCanvas', root);
   const redraw = () => { cancelAnimationFrame(stRaf); stRaf = requestAnimationFrame(() => drawPost(cv)); };
   const setLeg = () => { if (!s.legendaEditada) s.legenda = gerarLegenda(); root.querySelector('[name=legenda]').value = s.legenda; };
-  const srcLabel = () => {
-    const f = galeria().find(x => x.id === s.fotoId);
-    $('#stSrc', root).textContent = f ? `foto da galeria · ${STATUS_G[f.status][0].toLowerCase()}`
-      : get('produtos', s.prodId)?.foto ? 'usando a foto do cadastro (pequena) — escolha uma da galeria ou carregue a original' : 'sem foto — carregue uma';
-  };
-  const refreshStrip = () => { $('#stStrip', root).innerHTML = stripHTML(); hydrateThumbs($('#stStrip', root)); };
+  // a foto vem da Galeria; o estúdio só ajusta (sem miniaturas nem "carregar foto" aqui)
+  const srcLabel = () => { };
+  const refreshStrip = () => { };
   root.addEventListener('input', e => {
     const t = e.target, n = t.name;
     if (t.type === 'range') { s[n] = +t.value; const o = root.querySelector(`[data-out="${n}"]`); if (o) o.textContent = t.value; redraw(); return; }
@@ -521,9 +515,11 @@ async function initStudio() {
       s.prodId = t.value; const p = get('produtos', s.prodId);
       s.titulo = p.nome; s.preco = p.preco; s._tituloDe = p.id; s.legendaEditada = false;
       root.querySelector('[name=titulo]').value = s.titulo; root.querySelector('[name=preco]').value = iv(s.preco);
-      const ult = galeria().filter(f => f.produtoId === p.id && f.status === 'nova').sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))[0];
-      if (ult) await srcFromGaleria(ult.id); else await srcFromProduct(p);
-      refreshStrip(); srcLabel(); setLeg(); redraw();
+      // a foto escolhida na Galeria continua; ela passa a ficar registrada com este terço
+      const foto = galeria().find(f => f.id === s.fotoId);
+      if (foto) foto.produtoId = p.id;
+      else await srcFromProduct(p);   // sem foto da galeria: usa a do cadastro do terço
+      setLeg(); redraw();
     } else if (n === 'file') {
       const f = t.files[0]; t.value = ''; if (!f) return;
       const [nova] = await adicionarFotos([f], s.prodId); // toda foto nova vai para a galeria
