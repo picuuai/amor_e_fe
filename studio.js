@@ -196,6 +196,10 @@ const contatos = () => {
   return [c.whatsapp.trim() && 'WhatsApp ' + c.whatsapp.trim(), ig && (ig.startsWith('@') ? ig : '@' + ig)].filter(Boolean).join('   •   ');
 };
 
+// margem de segurança nas laterais (em pixels de um post de 1080): a grade do perfil do Instagram
+// mostra as miniaturas em 3:4 e corta ~34px de cada lado de um post 4:5 — textos e selos ficam fora dessa faixa
+const SEG = 92;
+
 // tamanho final do post; "Proporção da foto" segue a foto, dentro do que o Instagram aceita (4:5 até 1,91:1)
 function dimensoes() {
   const s = studio;
@@ -222,8 +226,8 @@ const TEMPLATES = {
     g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 10 * u;
     g.fillStyle = '#fff'; font(g, 700, 24 * u); g.textBaseline = 'middle';
     spaced(g, (db.params.nome || '').toUpperCase(), W / 2, 50 * u, 7 * u);
-    if (s.selo) { font(g, 800, 24 * u); pill(g, s.selo.toUpperCase(), 44 * u, 88 * u, 54 * u, '#f1c75b', '#3b2a1a', 'left', 22 * u); }
-    const X = 56 * u, maxW = W - 112 * u, items = [];
+    if (s.selo) { font(g, 800, 24 * u); pill(g, s.selo.toUpperCase(), SEG * u, 88 * u, 54 * u, '#f1c75b', '#3b2a1a', 'left', 22 * u); }
+    const X = SEG * u, maxW = W - 2 * SEG * u, items = [];
     items.push(tItem(g, s.titulo, maxW, 64 * u, 34 * u, 2, sz => font(g, 700, sz, 'Playfair Display'), '#fff', 'left', X));
     if (c.frase) items.push(tItem(g, c.frase, maxW, 30 * u, 20 * u, 1, sz => font(g, 500, sz, 'Playfair Display', 'italic'), 'rgba(255,255,255,.9)', 'left', X));
     const temPreco = s.mostrarPreco && s.preco > 0, cta = [c.cta, contatos()].filter(Boolean);
@@ -257,7 +261,7 @@ const TEMPLATES = {
     photo(g, img, x, y, w, h, moldura);
     g.beginPath(); g.roundRect(x + 12 * u, y + 12 * u, w - 24 * u, h - 24 * u, 10 * u);
     g.strokeStyle = 'rgba(255,238,200,.85)'; g.lineWidth = 2 * u; g.stroke();
-    if (s.selo) selo(g, s.selo, x + w - 64 * u, y + h - 8 * u, 76 * u, '#b8893a', '#fff');
+    if (s.selo) selo(g, s.selo, W - (SEG + 76) * u, y + h - 8 * u, 76 * u, '#b8893a', '#fff');
     textosRodape(g, u, W, y + h + 22 * u, H - 30 * u, {
       marca: '#a8792a', titulo: '#3b2a1a', frase: '#80613f', pill: '#b8893a', pillTxt: '#fff', texto: '#80613f',
     });
@@ -277,8 +281,8 @@ const TEMPLATES = {
     g.beginPath(); g.roundRect(x, y, w, h, 44 * u); g.fillStyle = '#fff'; g.fill(); g.restore();
     const ix = x + 16 * u, iy = y + 16 * u, iw = w - 32 * u, ih = h - 32 * u;
     photo(g, img, ix, iy, iw, ih, () => { g.beginPath(); g.roundRect(ix, iy, iw, ih, 30 * u); });
-    if (s.selo) { font(g, 800, 26 * u); pill(g, s.selo.toUpperCase(), ix + 26 * u, iy + 26 * u, 58 * u, '#f1c75b', '#3f2799', 'left', 24 * u); }
-    const X = 80 * u, maxW = W - 160 * u;
+    if (s.selo) { font(g, 800, 26 * u); pill(g, s.selo.toUpperCase(), Math.max(ix + 26 * u, SEG * u), iy + 26 * u, 58 * u, '#f1c75b', '#3f2799', 'left', 24 * u); }
+    const X = SEG * u, maxW = W - 2 * SEG * u;
     const items = [tItem(g, s.titulo, maxW, 70 * u, 40 * u, 2, sz => font(g, 800, sz), '#fff', 'left', X)];
     if (c.frase) items.push(tItem(g, c.frase, maxW, 32 * u, 22 * u, 2, sz => font(g, 500, sz), 'rgba(255,255,255,.86)', 'left', X));
     const temPreco = s.mostrarPreco && s.preco > 0, cta = [c.cta, contatos()].filter(Boolean);
@@ -300,9 +304,9 @@ const TEMPLATES = {
     g.fillStyle = '#fbfaf7'; g.fillRect(0, 0, W, H);
     const bottom = Math.max(300 * u, H * 0.25), ph = H - bottom;
     photo(g, img, 0, 0, W, ph);
-    if (s.selo) { font(g, 800, 24 * u); pill(g, s.selo.toUpperCase(), 48 * u, 48 * u, 56 * u, '#1d1830', '#fff', 'left', 24 * u); }
-    g.fillStyle = '#c9a45c'; g.fillRect(64 * u, ph + 40 * u, 90 * u, 5 * u);
-    const X = 64 * u, maxW = W - 128 * u;
+    if (s.selo) { font(g, 800, 24 * u); pill(g, s.selo.toUpperCase(), SEG * u, 48 * u, 56 * u, '#1d1830', '#fff', 'left', 24 * u); }
+    g.fillStyle = '#c9a45c'; g.fillRect(SEG * u, ph + 40 * u, 90 * u, 5 * u);
+    const X = SEG * u, maxW = W - 2 * SEG * u;
     const items = [];
     items.push({ h: 30 * u, draw: y0 => { font(g, 700, 22 * u); g.fillStyle = '#8a8398'; g.textAlign = 'left'; g.textBaseline = 'top'; if ('letterSpacing' in g) g.letterSpacing = 6 * u + 'px'; g.fillText((db.params.nome || '').toUpperCase(), X, y0); if ('letterSpacing' in g) g.letterSpacing = '0px'; } });
     const temPreco = s.mostrarPreco && s.preco > 0;
@@ -339,7 +343,7 @@ const TEMPLATES = {
     g.globalAlpha = 0.5; moldura(16 * u); g.lineWidth = 1.5 * u; g.stroke(); g.globalAlpha = 1;
     const brilho = (bx, by, r) => { g.fillStyle = '#f7e2a4'; g.beginPath(); g.moveTo(bx, by - r); g.quadraticCurveTo(bx, by, bx + r, by); g.quadraticCurveTo(bx, by, bx, by + r); g.quadraticCurveTo(bx, by, bx - r, by); g.quadraticCurveTo(bx, by, bx, by - r); g.fill(); };
     for (const [bx, by] of [[x - 16 * u, y - 16 * u], [x + w + 16 * u, y - 16 * u], [x - 16 * u, y + h + 16 * u], [x + w + 16 * u, y + h + 16 * u]]) brilho(bx, by, 22 * u);
-    if (s.selo) selo(g, s.selo, x + w - 70 * u, y + h - 6 * u, 76 * u, '#e8c875', '#0a1430');
+    if (s.selo) selo(g, s.selo, W - (SEG + 76) * u, y + h - 6 * u, 76 * u, '#e8c875', '#0a1430');
     textosRodape(g, u, W, y + h + 30 * u, H - 30 * u, {
       marca: '#e8c875', titulo: '#f3d98f', frase: '#d6dcf0', pill: '#e8c875', pillTxt: '#0a1430', texto: '#b9c3e3',
     });
@@ -348,7 +352,7 @@ const TEMPLATES = {
 
 // faixa de textos embaixo da foto (Elegante e Celestial): marca, nome, frase, preço + chamada, contatos
 function textosRodape(g, u, W, topo, base, cor) {
-  const s = studio, c = divCfg(), maxW = W - 160 * u, items = [];
+  const s = studio, c = divCfg(), maxW = W - 2 * SEG * u, items = [];
   items.push({ h: 24 * u, draw: y0 => { g.fillStyle = cor.marca; font(g, 700, 19 * u); g.textBaseline = 'top'; spaced(g, (db.params.nome || '').toUpperCase(), W / 2, y0, 8 * u); } });
   items.push(tItem(g, s.titulo, maxW, 56 * u, 34 * u, 1, sz => font(g, 700, sz, 'Playfair Display'), cor.titulo, 'center', W / 2));
   if (c.frase) items.push(tItem(g, c.frase, maxW, 26 * u, 18 * u, 1, sz => font(g, 500, sz, 'Playfair Display', 'italic'), cor.frase, 'center', W / 2));
@@ -370,11 +374,18 @@ function textosRodape(g, u, W, topo, base, cor) {
 }
 
 function fitCanvas(cv) {
-  const box = cv.parentElement; if (!box) return;
+  const box = cv.closest('.st-canvas'); if (!box) return;
   // no celular a prévia fica fixa no topo, então é menor
   const alt = innerWidth < 1000 ? Math.max(200, innerHeight * 0.34) : Math.max(320, innerHeight * 0.68);
   const k = Math.min(box.clientWidth / cv.width, alt / cv.height);
   cv.style.width = Math.round(cv.width * k) + 'px'; cv.style.height = Math.round(cv.height * k) + 'px';
+  // guia (só na tela, não vai no post): o que a grade 3:4 do perfil corta
+  const gd = $('#stGrade'); if (!gd) return;
+  gd.hidden = !studio.guiaGrade;
+  const a = cv.width / cv.height, w = cv.width * k, h = cv.height * k;
+  const lado = a > 0.75 ? (w - h * 0.75) / 2 : 0, cima = a < 0.75 ? (h - w / 0.75) / 2 : 0;
+  gd.style.width = w + 'px'; gd.style.height = h + 'px';
+  gd.style.setProperty('--lado', lado + 'px'); gd.style.setProperty('--cima', cima + 'px');
 }
 function drawPost(cv) {
   const s = studio, [W, H] = dimensoes();
@@ -429,7 +440,7 @@ function viewDivulgar() {
   const chips = (k, obj, sw) => `<div class="chips">${Object.entries(obj).map(([v, d]) => `<button type="button" class="chip ${v === s[k] ? 'on' : ''}" data-k="${k}" data-v="${v}">${sw ? `<span class="sw" style="background:${d[1]}"></span>${d[0]}` : d[2]}</button>`).join('')}</div>`;
   return `<div class="studio" id="studio">
     <div class="st-prev"><div class="card">
-      <div class="st-canvas"><canvas id="stCanvas" aria-label="Prévia do post"></canvas></div>
+      <div class="st-canvas"><div class="st-wrap"><canvas id="stCanvas" aria-label="Prévia do post"></canvas><div id="stGrade" class="grade" hidden></div></div></div>
       <p class="hint" style="margin:10px 0 12px;text-align:center">Arraste a foto para ajustar o enquadramento.</p>
       <div class="st-actions">
         ${noCelular()
@@ -461,6 +472,7 @@ function viewDivulgar() {
         ${chips('estilo', ESTILOS, true)}
         ${chips('formato', FORMATOS, false)}
         <label class="chk" id="optTextos" ${s.estilo === 'original' ? '' : 'hidden'}><input type="checkbox" name="textosFoto" ${s.textosFoto ? 'checked' : ''}>Mostrar nome, preço e contatos sobre a foto</label>
+        <label class="chk"><input type="checkbox" name="guiaGrade" ${s.guiaGrade ? 'checked' : ''}>Mostrar o corte da grade do perfil (só na prévia)</label>
       </div>
       <div class="card"><div class="card-h">${ic('tag')}<h3>3. Textos</h3></div>
         <label>Título<input name="titulo" value="${esc(s.titulo)}"></label>
@@ -475,6 +487,7 @@ function viewDivulgar() {
       <div class="card"><div class="card-h">${ic('chat')}<h3>4. Legenda</h3><button type="button" class="btn sm" data-s="regen">${ic('refresh')}Gerar de novo</button></div>
         <div class="chips">${[['instagram', 'instagram', 'Instagram / Facebook'], ['whatsapp', 'chat', 'WhatsApp']].map(([v, i, l]) => `<button type="button" class="chip ${s.legendaTipo === v ? 'on' : ''}" data-leg="${v}">${ic(i)}${l}</button>`).join('')}</div>
         <textarea name="legenda" style="min-height:230px"></textarea>
+        <label class="chk" style="margin:12px 0 0"><input type="checkbox" name="legendaJunto" ${divCfg().legendaJunto !== false ? 'checked' : ''}>Mandar a legenda junto ao compartilhar (desmarque para enviar só a imagem)</label>
       </div>
       ${(db.posts || []).length ? `<div class="card"><div class="card-h">${ic('instagram')}<h3>Publicados</h3></div><div class="list">${[...db.posts].reverse().slice(0, 8).map(x => `<div class="li" style="cursor:default">${foto(get('produtos', x.produtoId), 'sm')}<div class="li-main"><div class="li-t">${esc(x.titulo)}</div><div class="li-s">${fdate(x.data)} · ${esc(ESTILOS[x.estilo]?.[0] || '')}</div></div><span class="tag ${x.status === 'publicado' ? 'ok' : 'warn'}">${x.status === 'publicado' ? 'publicado' : 'conferir'}</span></div>`).join('')}</div></div>` : ''}
     </div></div>`;
@@ -518,6 +531,8 @@ async function initStudio() {
       refreshStrip(); srcLabel(); redraw();
     } else if (n === 'auto') { s.auto = t.checked; redraw(); }
     else if (n === 'textosFoto') { s.textosFoto = t.checked; redraw(); }
+    else if (n === 'legendaJunto') { c.legendaJunto = t.checked; }
+    else if (n === 'guiaGrade') { s.guiaGrade = t.checked; redraw(); }
     else if (n === 'mostrarPreco') { s.mostrarPreco = t.checked; setLeg(); redraw(); }
     else if (n === 'selo') { s.selo = t.value; setLeg(); redraw(); }
     save(); // guarda frase, chamada e contatos
@@ -544,6 +559,15 @@ async function initStudio() {
     const b = e.target.closest('[data-s]'); if (!b) return;
     const a = b.dataset.s;
     if (a === 'marcarPub') { marcarPublicada(s.fotoId); setPub(`${ic('check')}<div>Foto marcada como publicada.</div>`, 'ok'); refreshStrip(); srcLabel(); }
+    if (a === 'desfazerPub' && s._desfazer) {
+      const { regId, fotoId, antes } = s._desfazer;
+      db.posts = (db.posts || []).filter(p => p.id !== regId);
+      const f = galeria().find(x => x.id === fotoId);
+      if (f && antes) Object.assign(f, antes);
+      s._desfazer = null; save();
+      setPub(`${ic('refresh')}<div>Desfeito: a foto voltou a ficar como antes.</div>`);
+      refreshStrip(); srcLabel();
+    }
     if (a === 'regen') { s.legendaEditada = false; setLeg(); }
     if (a === 'encaixar' && s._slot) {
       // zoom que faz a foto caber inteira na área do modelo atual
@@ -560,7 +584,7 @@ async function initStudio() {
     }
     if (a === 'copy') copiarLegenda();
     if (a === 'download') baixarPost(cv).then(oferecerMarcar);
-    if (a === 'share') compartilharPost(cv).then(oferecerMarcar);
+    if (a === 'share') compartilharPost(cv).then(ok => ok ? registrarCompartilhado() : oferecerMarcar());
     if (a === 'publicar') publicarInstagram(cv, b);
     if (a === 'usarFoto') usarFotoNoProduto();
   });
@@ -598,13 +622,32 @@ async function copiarLegenda(silencioso) {
   catch { if (!silencioso) toast('Não foi possível copiar — selecione o texto da legenda e copie.'); return false; }
 }
 async function baixarPost(cv) { download(`post-${slug(studio.titulo)}.jpg`, await postBlob(cv), 'image/jpeg'); }
+// devolve true quando o compartilhamento foi concluído (a pessoa escolheu um app e enviou)
 async function compartilharPost(cv) {
   const file = new File([await postBlob(cv)], `post-${slug(studio.titulo)}.jpg`, { type: 'image/jpeg' });
   const copiou = await copiarLegenda(true);
+  const junto = divCfg().legendaJunto !== false;   // desmarcado: vai só a imagem (ex.: WhatsApp sem texto)
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], text: studio.legenda }); if (copiou) toast('Legenda copiada — é só colar no post.'); }
-    catch (e) { if (e.name !== 'AbortError') toast('Não foi possível compartilhar: ' + e.message); }
-  } else { await baixarPost(cv); toast('Imagem baixada' + (copiou ? ' e legenda copiada' : '') + '.'); }
+    try {
+      await navigator.share(junto ? { files: [file], text: studio.legenda } : { files: [file] });
+      if (copiou) toast(junto ? 'Legenda copiada — é só colar no post.' : 'Enviada só a imagem. (A legenda ficou copiada, se precisar.)');
+      return true;
+    }
+    catch (e) { if (e.name !== 'AbortError') toast('Não foi possível compartilhar: ' + e.message); return false; }
+  }
+  await baixarPost(cv); toast('Imagem baixada' + (copiou ? ' e legenda copiada' : '') + '.');
+  return false;
+}
+// depois de compartilhar: marca a foto da galeria como publicada e registra o post (com opção de desfazer)
+function registrarCompartilhado() {
+  const s = studio, f = galeria().find(x => x.id === s.fotoId);
+  const reg = { id: uid(), data: today(), produtoId: s.prodId, fotoId: s.fotoId, titulo: s.titulo, estilo: s.estilo, status: 'publicado', via: 'compartilhado' };
+  (db.posts ||= []).push(reg);
+  const antes = f ? { status: f.status, publicadaEm: f.publicadaEm, vezes: f.vezes } : null;
+  if (f) marcarPublicada(f.id); else save();
+  studio._desfazer = { regId: reg.id, fotoId: f?.id, antes };
+  setPub(`${ic('check')}<div><b>${f ? 'Foto marcada como publicada' : 'Post registrado'}.</b> <button type="button" class="btn sm" data-s="desfazerPub">Desfazer</button></div>`, 'ok');
+  $('#stStrip') && ($('#stStrip').innerHTML = stripHTML(), hydrateThumbs($('#stStrip')));
 }
 async function usarFotoNoProduto() {
   const s = studio, p = get('produtos', s.prodId), img = processed();
@@ -697,7 +740,7 @@ function oferecerMarcar() {
 async function publicarInstagram(cv, btn) {
   const s = studio;
   // no celular o próprio app do Instagram recebe a imagem pela janela de compartilhar
-  if (matchMedia('(pointer: coarse)').matches) { await compartilharPost(cv); oferecerMarcar(); return; }
+  if (matchMedia('(pointer: coarse)').matches) { if (await compartilharPost(cv)) registrarCompartilhado(); else oferecerMarcar(); return; }
   if (s.formato === 'story') { toast('Stories só podem ser publicados pelo celular. Use “Compartilhar” ou “Baixar”.'); return; }
   const st = await postadorStatus();
   if (!st || st.logado === false) {

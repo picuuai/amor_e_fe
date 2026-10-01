@@ -281,6 +281,10 @@ textarea{min-height:70px;resize:vertical}
 .st-canvas{display:flex;justify-content:center}
 .st-canvas canvas{display:block;border-radius:12px;box-shadow:0 10px 30px -10px rgba(20,10,50,.35);touch-action:none;cursor:grab;max-width:100%}
 .st-canvas canvas.grab{cursor:grabbing}
+.st-wrap{position:relative;display:inline-block;line-height:0}
+/* faixas que a grade 3:4 do perfil do Instagram corta (só na tela) */
+.grade{position:absolute;left:0;top:0;pointer-events:none;border-radius:12px;
+  box-shadow:inset var(--lado) 0 0 0 rgba(0,0,0,.55),inset calc(-1 * var(--lado)) 0 0 0 rgba(0,0,0,.55),inset 0 var(--cima) 0 0 rgba(0,0,0,.55),inset 0 calc(-1 * var(--cima)) 0 0 rgba(0,0,0,.55)}
 .st-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .st-postador{text-align:center;margin-top:12px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
