@@ -54,6 +54,8 @@ const OR_TRILHAS = {
   nenhuma: { nome: 'Sem música' },
 };
 const OR_DURACOES = [15, 20, 30, 45];
+// voz que lê a oração no vídeo: as "automáticas" são vozes do Windows geradas pelo postador (só no computador)
+const OR_VOZES = { nenhuma: { nome: 'Sem voz' }, Maria: { nome: 'Maria (automática)' }, Daniel: { nome: 'Daniel (automática)' }, minha: { nome: 'Minha voz' } };
 
 const orac = { data: null, id: null, estilo: null, formato: null, trilha: null, dur: null, legenda: '', legendaEditada: false, _lay: null, _layKey: '', _bg: null, _bgKey: '', _anim: null };
 const orCfg = () => { const c = (db.params.oracao ||= { estilo: 'celestial', formato: 'retrato', trilha: 'serena', dur: 20, mostrarData: true }); if (!c.fonteV2) { c.fonte = 'salmo'; c.fonteV2 = 1; } return c; };
@@ -263,10 +265,16 @@ function drawOracao(cv, t = null) {
   y += 54 * u;
   // as linhas da oração vão aparecendo uma a uma na primeira metade do vídeo
   const lh = L.sz * 1.42, janela = Math.max(3, (orac._durAnim || orac.dur) * 0.55 - 1.5);
+  // com voz, cada linha aparece mais ou menos na hora em que é lida (proporcional ao tamanho do texto)
+  const vz = !parado && orac._vozAnim, pesos = L.lines.map(l => l.length + 7), totP = o.t.length + 10 + pesos.reduce((a, b) => a + b, 0);
+  let lido = o.t.length + 10;
   g.fillStyle = cor.texto; font(g, 500, L.sz, 'Playfair Display');
-  L.lines.forEach((l, i) => { g.globalAlpha = fade(1.4 + janela * i / L.lines.length, 0.9); g.fillText(l, W / 2, y + i * lh); });
+  L.lines.forEach((l, i) => {
+    g.globalAlpha = vz ? fade(vz.ini + vz.dur * lido / totP - 0.3, 0.6) : fade(1.4 + janela * i / L.lines.length, 0.9);
+    lido += pesos[i]; g.fillText(l, W / 2, y + i * lh);
+  });
   y += L.corpo;
-  g.globalAlpha = fade(1.4 + janela, 1);
+  g.globalAlpha = fade(vz ? vz.ini + vz.dur : 1.4 + janela, 1);
   if (o.a) { g.fillStyle = cor.marca; font(g, 500, 27 * u, 'Playfair Display', 'italic'); g.fillText('— ' + o.a, W / 2, y + 16 * u); }
   const ig = divCfg().instagram.trim();
   if (ig) { g.fillStyle = cor.rodape; font(g, 600, 24 * u); g.globalAlpha *= 0.95; g.fillText(ig.startsWith('@') ? ig : '@' + ig, W / 2, L.base - 34 * u); }
@@ -336,16 +344,70 @@ function orParar() {
 }
 const orMime = () => typeof MediaRecorder === 'undefined' ? null
   : ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
-// toca a animação com a música; com gravar=true devolve o vídeo (Blob) no final
-function orAnimar(cv, gravar, aCada) {
+/* ---------- voz lendo a oração ---------- */
+const orTextoVoz = () => { const o = oracaoAtual(); return o.t + '.\n' + o.x; };
+const orDecodAudio = buf => new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 2, 44100).decodeAudioData(buf);
+// devolve o áudio da voz escolhida (AudioBuffer), null se "Sem voz", ou lança um erro explicando o que falta
+async function orPrepararVoz() {
+  const v = orac.voz;
+  if (!v || v === 'nenhuma') return null;
+  if (v === 'minha') {
+    const m = orac._minhaVoz;
+    if (!m || m.id !== oracaoAtual().id) throw new Error('grave a sua voz lendo esta oração primeiro (botão “Gravar minha voz”).');
+    return m.buffer;
+  }
+  const chave = v + '|' + orTextoVoz();
+  if (orac._vozAuto?.chave === chave) return orac._vozAuto.buffer;
+  let j;
+  try {
+    j = await (await fetch(POSTADOR + '/voz', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: orTextoVoz(), voz: v }), signal: AbortSignal.timeout(90000) })).json();
+  } catch { throw new Error('a voz automática precisa do postador ligado neste computador. No celular, use “Minha voz”.'); }
+  if (!j.ok) throw new Error(j.erro || 'o postador não gerou a voz.');
+  const buffer = await orDecodAudio(await (await fetch(j.audio)).arrayBuffer());
+  orac._vozAuto = { chave, buffer };
+  return buffer;
+}
+// grava a voz da pessoa pelo microfone (um clique começa, outro termina)
+async function orGravarVoz(aoMudar) {
+  const m = orac._mic;
+  if (m) { m.rec.stop(); return; }
+  orParar();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch { toast('Não consegui usar o microfone. Permita o acesso no navegador e tente de novo.'); return; }
+  const rec = new MediaRecorder(stream), pedacos = [], id = oracaoAtual().id;
+  rec.ondataavailable = e => e.data.size && pedacos.push(e.data);
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop()); clearInterval(orac._mic?.relogio); orac._mic = null;
+    try { orac._minhaVoz = { id, buffer: await orDecodAudio(await new Blob(pedacos, { type: rec.mimeType }).arrayBuffer()) }; }
+    catch { toast('Não consegui ler a gravação. Tente de novo.'); }
+    aoMudar();
+  };
+  orac._mic = { rec, ini: Date.now(), relogio: setInterval(aoMudar, 500) };
+  rec.start(); aoMudar();
+}
+
+// toca a animação com a música (e a voz, se houver); com gravar=true devolve o vídeo (Blob) no final
+function orAnimar(cv, gravar, aCada, voz) {
   orParar();
   return new Promise(fim => {
-    const dur = orac.dur, a = orac._anim = { fim, raf: 0 };
-    orac._durAnim = dur;
+    // com voz, o vídeo dura pelo menos o tempo da leitura mais um respiro no final
+    const dur = Math.max(orac.dur, voz ? Math.ceil(voz.duration + 4.5) : 0), a = orac._anim = { fim, raf: 0 };
+    orac._durAnim = dur; orac._vozAnim = voz ? { ini: 1.3, dur: voz.duration } : null;
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC && orac.trilha !== 'nenhuma') {
+    if (AC && (orac.trilha !== 'nenhuma' || voz)) {
       a.ctx = new AC(); a.ctx.resume?.();
-      a.saida = montarTrilha(a.ctx, orac.trilha, dur);
+      a.saida = a.ctx.createGain();
+      const musica = a.ctx.createGain(); montarTrilha(a.ctx, orac.trilha, dur).connect(musica); musica.connect(a.saida);
+      if (voz) {
+        const t0 = a.ctx.currentTime + 1.3, fonte = a.ctx.createBufferSource(), vol = a.ctx.createGain(), d = voz.getChannelData(0);
+        let pico = 0; for (let i = 0; i < d.length; i += 8) pico = Math.max(pico, Math.abs(d[i]));
+        vol.gain.value = Math.min(5, 0.9 / (pico || 1));                  // nivela gravações baixas
+        fonte.buffer = voz; fonte.connect(vol); vol.connect(a.saida); fonte.start(t0);
+        // a música abaixa enquanto a voz fala e volta no final
+        musica.gain.setValueAtTime(1, a.ctx.currentTime); musica.gain.linearRampToValueAtTime(0.28, t0);
+        musica.gain.setValueAtTime(0.28, t0 + voz.duration); musica.gain.linearRampToValueAtTime(1, t0 + voz.duration + 1.5);
+      }
       a.saida.connect(a.ctx.destination);
     }
     if (gravar) {
@@ -383,7 +445,7 @@ function gerarLegendaOracao() {
 /* ---------- tela ---------- */
 function viewOracoes() {
   const s = orac, c = orCfg();
-  s.data ||= today(); s.estilo ||= c.estilo; s.formato ||= c.formato; s.trilha ||= c.trilha; s.dur ||= c.dur;
+  s.data ||= today(); s.estilo ||= c.estilo; s.formato ||= c.formato; s.trilha ||= c.trilha; s.dur ||= c.dur; s.voz ||= c.voz || 'nenhuma';
   if (!oracoesTodas().some(o => o.id === s.id)) { s.id = oracaoDoDia(s.data).id; s._auto = true; }
   const o = oracaoAtual(), hoje = s.data === today(), propria = o.rss || (db.oracoes || []).some(x => x.id === o.id);
   const chips = (k, obj, sw) => `<div class="chips">${Object.entries(obj).map(([v, d]) => `<button type="button" class="chip ${v === s[k] ? 'on' : ''}" data-k="${k}" data-v="${v}">${sw ? `<span class="sw" style="background:${d[1]}"></span>${d[0]}` : (d[2] || d.nome)}</button>`).join('')}</div>`;
@@ -427,8 +489,12 @@ function viewOracoes() {
         ${chips('formato', OR_FORMATOS, false)}
         <label class="chk"><input type="checkbox" name="mostrarData" ${c.mostrarData ? 'checked' : ''}>Mostrar a data no cartão</label>
       </div>
-      <div class="card"><div class="card-h">${ic('music')}<h3>3. Música do vídeo</h3><button type="button" class="btn sm" data-o="ouvir">${ic('play')}Ouvir prévia</button></div>
+      <div class="card"><div class="card-h">${ic('music')}<h3>3. Música e voz do vídeo</h3><button type="button" class="btn sm" data-o="ouvir">${ic('play')}Ouvir prévia</button></div>
         ${chips('trilha', OR_TRILHAS, false)}
+        <div class="sec" style="margin-top:4px">Voz lendo a oração</div>
+        ${chips('voz', OR_VOZES, false)}
+        ${s.voz === 'minha' ? `<div class="or-dia" style="margin:-4px 0 12px"><span id="orVozMsg" class="hint" style="flex:1;margin:0"></span><button type="button" class="btn sm" data-o="gravarVoz"></button></div>` : ''}
+        ${s.voz === 'Maria' || s.voz === 'Daniel' ? `<p class="hint" style="margin:-6px 0 12px">Voz do Windows, gerada neste computador pelo postador. O vídeo se estica sozinho se a leitura passar da duração escolhida.</p>` : ''}
         <label>Duração do vídeo<select name="dur">${OR_DURACOES.map(d => `<option value="${d}" ${d === s.dur ? 'selected' : ''}>${d} segundos</option>`).join('')}</select></label>
         <p class="hint" style="margin:-6px 0 0">A música é criada pelo próprio app (instrumental suave), então pode postar sem risco de bloqueio por direito autoral.
         ${video ? (mp4 ? '' : ' Este navegador grava em .webm, que o Instagram não aceita — use o Chrome ou o Edge atualizados para sair em .mp4.') : ' Este navegador não grava vídeo — use o Chrome ou o Edge.'}</p>
@@ -465,6 +531,20 @@ function initOracoes() {
   const setLeg = () => { if (!s.legendaEditada) s.legenda = gerarLegendaOracao(); root.querySelector('[name=legenda]').value = s.legenda; };
   const trocaDia = d => { orParar(); s.data = d; s.id = oracaoDoDia(d).id; s.legendaEditada = false; render(); };
   const prog = p => { const el = $('#orProg'); if (el) { el.hidden = p == null; el.firstElementChild.style.width = (p || 0) * 100 + '%'; } };
+  // busca a voz escolhida; devolve false (e explica) se não der para continuar
+  const pegarVoz = async b => {
+    if (s.voz === 'Maria' || s.voz === 'Daniel') setPub(`${ic('refresh')}<div>Gerando a voz…</div>`);
+    b.disabled = true;
+    try { const v = await orPrepararVoz(); setPub(''); return v; }
+    catch (e) { setPub(`${ic('alert')}<div>Voz: ${esc(e.message)}</div>`, 'warn'); return false; }
+    finally { b.disabled = false; }
+  };
+  const pintarVoz = () => {
+    const msg = $('#orVozMsg'), bt = root.querySelector('[data-o=gravarVoz]'); if (!msg || !bt) return;
+    const m = s._minhaVoz, grav = s._mic, tem = m && m.id === oracaoAtual().id;
+    msg.textContent = grav ? `Gravando… ${Math.floor((Date.now() - grav.ini) / 1000)} s. Leia a oração com calma.` : tem ? `Gravação de ${Math.round(m.buffer.duration)} s pronta. Use “Ouvir prévia” para conferir.` : 'Grave você lendo esta oração; a música fica baixinha ao fundo.';
+    bt.innerHTML = grav ? `${ic('stop')}Parar` : `${ic('play')}${tem ? 'Gravar de novo' : 'Gravar minha voz'}`;
+  };
   const botaoOuvir = () => { const b = root.querySelector('[data-o=ouvir]'); if (b) b.innerHTML = s._anim ? `${ic('stop')}Parar` : `${ic('play')}Ouvir prévia`; };
   root.addEventListener('input', e => { if (e.target.name === 'legenda') { s.legenda = e.target.value; s.legendaEditada = true; } });
   root.addEventListener('change', e => {
@@ -482,7 +562,9 @@ function initOracoes() {
       if (s._video) { s._video = null; setPub(''); }   // o vídeo gravado era do visual/música anterior
       s[k] = c[k] = chip.dataset.v;
       $$(`.chip[data-k="${k}"]`, root).forEach(b => b.classList.toggle('on', b === chip));
-      save(); redraw(); return;
+      save();
+      if (k === 'voz') { render(); return; }   // mostra ou esconde o gravador
+      redraw(); return;
     }
     const b = e.target.closest('[data-o]'); if (!b) return;
     const a = b.dataset.o, o = oracaoAtual();
@@ -496,7 +578,8 @@ function initOracoes() {
     if (a === 'copy') orCopiar();
     if (a === 'ouvir') {
       if (s._anim) { orParar(); prog(null); botaoOuvir(); return; }
-      const p = orAnimar(cv, false, prog); botaoOuvir();
+      const voz = await pegarVoz(b); if (voz === false) return;
+      const p = orAnimar(cv, false, prog, voz); botaoOuvir();
       await p; prog(null); botaoOuvir();
     }
     if (a === 'download') { orParar(); drawOracao(cv); download(`oracao-${s.data}-${slug(o.t)}.jpg`, await postBlob(cv), 'image/jpeg'); orOferecerMarcar('imagem'); }
@@ -504,16 +587,18 @@ function initOracoes() {
     if (a === 'publicar') { orParar(); drawOracao(cv); orPublicar(cv, b); }
     if (a === 'video') {
       if (b.dataset.gravando) { orParar(); return; }
+      const voz = await pegarVoz(b); if (voz === false) return;
       b.dataset.gravando = 1; b.innerHTML = `${ic('stop')}<span>Cancelar</span>`;
-      setPub(`${ic('refresh')}<div>Gravando o vídeo (${s.dur} s). Deixe esta tela aberta e visível até terminar.</div>`);
-      const blob = await orAnimar(cv, true, prog);
+      const gravacao = orAnimar(cv, true, prog, voz);
+      setPub(`${ic('refresh')}<div>Gravando o vídeo (${s._durAnim} s${voz ? ', com a voz' : ''}). Deixe esta tela aberta e visível até terminar.</div>`);
+      const blob = await gravacao;
       delete b.dataset.gravando; b.innerHTML = `${ic('video')}<span>Vídeo com música</span>`; prog(null);
       if (!blob) { setPub(''); return; }
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
       if (s._video) URL.revokeObjectURL(s._video.url);
       s._video = { blob, ext, nome: `oracao-${s.data}-${slug(o.t)}.${ext}`, url: URL.createObjectURL(blob) };
       // o vídeo fica guardado aqui e cada botão age na hora do clique (o navegador bloqueia download "atrasado")
-      setPub(`${ic('check')}<div style="min-width:0"><b>Vídeo pronto</b> (${s.dur} s, ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB). Confira e escolha:
+      setPub(`${ic('check')}<div style="min-width:0"><b>Vídeo pronto</b> (${s._durAnim} s, ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB). Confira e escolha:
         <video class="or-video" src="${s._video.url}" controls playsinline></video>
         ${ext === 'webm' ? '<div>Atenção: saiu em .webm; o Instagram só aceita .mp4 (use o Chrome ou o Edge atualizados).</div>' : ''}
         <div class="bar" style="margin:8px 0 0">${noCelular()
@@ -528,9 +613,10 @@ function initOracoes() {
     }
     if (a === 'shareVideo' && s._video) await orCompartilhar(new File([s._video.blob], s._video.nome, { type: s._video.blob.type }), 'video');
     if (a === 'pubVideo' && s._video) orPublicar(cv, b, s._video);
+    if (a === 'gravarVoz') orGravarVoz(pintarVoz);
     if (a === 'marcar') { orRegistrar(b.dataset.tipo, 'publicado'); render(); toast('Oração marcada como postada.'); }
   });
-  setLeg(); drawOracao(cv); fitCanvas(cv); refreshIg(); orAtualizarRss();
+  setLeg(); drawOracao(cv); fitCanvas(cv); refreshIg(); orAtualizarRss(); pintarVoz();
   Promise.all(['700 60px "Playfair Display"', '500 40px "Playfair Display"', 'italic 500 40px "Playfair Display"', '700 30px "Plus Jakarta Sans"'].map(f => document.fonts.load(f)))
     .then(() => { if (cv.isConnected) { s._layKey = ''; redraw(); } }, () => { });
 }
@@ -603,3 +689,4 @@ async function orPublicar(cv, btn, video) {
     setPub(`${ic('alert')}<div>Não foi possível publicar: ${esc(err.message)}</div>`, 'bad');
   } finally { btn.disabled = false; }
 }
+window.addEventListener('hashchange', () => orac._mic?.rec.stop());   // saiu da tela no meio da gravação da voz
