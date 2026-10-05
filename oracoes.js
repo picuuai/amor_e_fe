@@ -356,35 +356,58 @@ async function orPrepararVoz() {
     if (!m || m.id !== oracaoAtual().id) throw new Error('grave a sua voz lendo esta oração primeiro (botão “Gravar minha voz”).');
     return m.buffer;
   }
-  const chave = v + '|' + orTextoVoz();
+  const ritmo = orCfg().vozRitmo ?? -16, chave = v + '|' + ritmo + '|' + orTextoVoz();
   if (orac._vozAuto?.chave === chave) return orac._vozAuto.buffer;
   let j;
   try {
-    j = await (await fetch(POSTADOR + '/voz', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: orTextoVoz(), voz: v }), signal: AbortSignal.timeout(90000) })).json();
+    j = await (await fetch(POSTADOR + '/voz', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: orTextoVoz(), voz: v, ritmo }), signal: AbortSignal.timeout(90000) })).json();
   } catch { throw new Error('a voz automática precisa do postador ligado neste computador. No celular, use “Minha voz”.'); }
   if (!j.ok) throw new Error(j.erro || 'o postador não gerou a voz.');
   const buffer = await orDecodAudio(await (await fetch(j.audio)).arrayBuffer());
   orac._vozAuto = { chave, buffer };
   return buffer;
 }
-// grava a voz da pessoa pelo microfone (um clique começa, outro termina)
+// grava a voz da pessoa pelo microfone, com o texto da oração na tela para acompanhar
 async function orGravarVoz(aoMudar) {
-  const m = orac._mic;
-  if (m) { m.rec.stop(); return; }
+  if (orac._mic) { orac._mic.parar(true); return; }
   orParar();
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch { toast('Não consegui usar o microfone. Permita o acesso no navegador e tente de novo.'); return; }
-  const rec = new MediaRecorder(stream), pedacos = [], id = oracaoAtual().id;
+  const o = oracaoAtual(), pedacos = [], rec = new MediaRecorder(stream);
+  // tela cheia com a oração em letra grande: contagem 3-2-1, depois grava até tocar em "Terminar"
+  const tela = document.createElement('div'); tela.className = 'or-leitor';
+  tela.innerHTML = `<div class="or-leitor-in">
+    <div class="or-leitor-top"><b id="orLeitorTempo"></b><span class="grow"></span>
+      <button type="button" class="btn" data-l="cancelar">Cancelar</button><button type="button" class="btn pri" data-l="terminar" disabled>${ic('stop')}Terminar</button></div>
+    <h2>${esc(o.t)}</h2>
+    <div class="or-leitor-txt">${o.x.split('\n').map(l => `<p>${esc(l)}</p>`).join('')}</div>
+    <p class="or-leitor-dica">Leia com calma, do título até o fim. Quando acabar, toque em “Terminar”.</p></div>`;
+  document.body.appendChild(tela);
+  const tempo = tela.querySelector('#orLeitorTempo'), m = orac._mic = { rec, ini: 0, salvar: false };
+  m.parar = salvar => {
+    m.salvar = salvar && m.ini > 0; clearInterval(m.relogio);
+    if (rec.state !== 'inactive') rec.stop(); else rec.onstop();
+  };
   rec.ondataavailable = e => e.data.size && pedacos.push(e.data);
   rec.onstop = async () => {
-    stream.getTracks().forEach(t => t.stop()); clearInterval(orac._mic?.relogio); orac._mic = null;
-    try { orac._minhaVoz = { id, buffer: await orDecodAudio(await new Blob(pedacos, { type: rec.mimeType }).arrayBuffer()) }; }
-    catch { toast('Não consegui ler a gravação. Tente de novo.'); }
+    stream.getTracks().forEach(t => t.stop()); clearInterval(m.relogio); tela.remove(); orac._mic = null;
+    if (m.salvar) {
+      try { orac._minhaVoz = { id: o.id, buffer: await orDecodAudio(await new Blob(pedacos, { type: rec.mimeType }).arrayBuffer()) }; }
+      catch { toast('Não consegui ler a gravação. Tente de novo.'); }
+    }
     aoMudar();
   };
-  orac._mic = { rec, ini: Date.now(), relogio: setInterval(aoMudar, 500) };
-  rec.start(); aoMudar();
+  tela.addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (b) m.parar(b.dataset.l === 'terminar'); });
+  let falta = 3;
+  const passo = () => {
+    if (orac._mic !== m) return;
+    if (falta > 0) { tempo.textContent = `Prepare-se… ${falta--}`; return; }
+    if (!m.ini) { m.ini = Date.now(); rec.start(); tela.classList.add('gravando'); tela.querySelector('[data-l=terminar]').disabled = false; }
+    tempo.textContent = `● Gravando  ${Math.floor((Date.now() - m.ini) / 1000)} s`;
+    aoMudar();
+  };
+  passo(); m.relogio = setInterval(passo, 1000); aoMudar();
 }
 
 // toca a animação com a música (e a voz, se houver); com gravar=true devolve o vídeo (Blob) no final
@@ -403,7 +426,15 @@ function orAnimar(cv, gravar, aCada, voz) {
         const t0 = a.ctx.currentTime + 1.3, fonte = a.ctx.createBufferSource(), vol = a.ctx.createGain(), d = voz.getChannelData(0);
         let pico = 0; for (let i = 0; i < d.length; i += 8) pico = Math.max(pico, Math.abs(d[i]));
         vol.gain.value = Math.min(5, 0.9 / (pico || 1));                  // nivela gravações baixas
-        fonte.buffer = voz; fonte.connect(vol); vol.connect(a.saida); fonte.start(t0);
+        // tratamento da voz: tira o grave "de caixa", dá corpo, suaviza o chiado, iguala o volume e põe um eco leve de igreja
+        const f = (tipo, freq, ganho = 0, q = 0.8) => { const b = a.ctx.createBiquadFilter(); b.type = tipo; b.frequency.value = freq; b.gain.value = ganho; b.Q.value = q; return b; };
+        const comp = a.ctx.createDynamicsCompressor(), eco = a.ctx.createConvolver(), ecoVol = a.ctx.createGain(), seco = a.ctx.createGain();
+        comp.threshold.value = -22; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.25;
+        eco.buffer = orImpulso(a.ctx); ecoVol.gain.value = 0.16; seco.gain.value = 1.15;
+        fonte.buffer = voz;
+        [fonte, vol, f('highpass', 85), f('peaking', 210, 3), f('peaking', 3000, 2, 1), f('highshelf', 6500, -3), comp].reduce((x, y) => (x.connect(y), y));
+        comp.connect(seco); seco.connect(a.saida); comp.connect(eco); eco.connect(ecoVol); ecoVol.connect(a.saida);
+        fonte.start(t0);
         // a música abaixa enquanto a voz fala e volta no final
         musica.gain.setValueAtTime(1, a.ctx.currentTime); musica.gain.linearRampToValueAtTime(0.28, t0);
         musica.gain.setValueAtTime(0.28, t0 + voz.duration); musica.gain.linearRampToValueAtTime(1, t0 + voz.duration + 1.5);
@@ -494,7 +525,8 @@ function viewOracoes() {
         <div class="sec" style="margin-top:4px">Voz lendo a oração</div>
         ${chips('voz', OR_VOZES, false)}
         ${s.voz === 'minha' ? `<div class="or-dia" style="margin:-4px 0 12px"><span id="orVozMsg" class="hint" style="flex:1;margin:0"></span><button type="button" class="btn sm" data-o="gravarVoz"></button></div>` : ''}
-        ${s.voz === 'Maria' || s.voz === 'Daniel' ? `<p class="hint" style="margin:-6px 0 12px">Voz do Windows, gerada neste computador pelo postador. O vídeo se estica sozinho se a leitura passar da duração escolhida.</p>` : ''}
+        ${s.voz === 'Maria' || s.voz === 'Daniel' ? `<label>Ritmo da leitura<select name="vozRitmo">${[[-16, 'Calmo, de oração'], [-6, 'Natural'], [2, 'Mais rápido']].map(([v, l]) => `<option value="${v}" ${v === (c.vozRitmo ?? -16) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <p class="hint" style="margin:-6px 0 12px">Voz do Windows, gerada neste computador pelo postador. O vídeo se estica sozinho se a leitura passar da duração escolhida.</p>` : ''}
         <label>Duração do vídeo<select name="dur">${OR_DURACOES.map(d => `<option value="${d}" ${d === s.dur ? 'selected' : ''}>${d} segundos</option>`).join('')}</select></label>
         <p class="hint" style="margin:-6px 0 0">A música é criada pelo próprio app (instrumental suave), então pode postar sem risco de bloqueio por direito autoral.
         ${video ? (mp4 ? '' : ' Este navegador grava em .webm, que o Instagram não aceita — use o Chrome ou o Edge atualizados para sair em .mp4.') : ' Este navegador não grava vídeo — use o Chrome ou o Edge.'}</p>
@@ -542,7 +574,7 @@ function initOracoes() {
   const pintarVoz = () => {
     const msg = $('#orVozMsg'), bt = root.querySelector('[data-o=gravarVoz]'); if (!msg || !bt) return;
     const m = s._minhaVoz, grav = s._mic, tem = m && m.id === oracaoAtual().id;
-    msg.textContent = grav ? `Gravando… ${Math.floor((Date.now() - grav.ini) / 1000)} s. Leia a oração com calma.` : tem ? `Gravação de ${Math.round(m.buffer.duration)} s pronta. Use “Ouvir prévia” para conferir.` : 'Grave você lendo esta oração; a música fica baixinha ao fundo.';
+    msg.textContent = grav ? 'Gravando… o texto está na tela para você acompanhar.' : tem ? `Gravação de ${Math.round(m.buffer.duration)} s pronta. Use “Ouvir prévia” para conferir.` : 'Grave você lendo esta oração; a música fica baixinha ao fundo.';
     bt.innerHTML = grav ? `${ic('stop')}Parar` : `${ic('play')}${tem ? 'Gravar de novo' : 'Gravar minha voz'}`;
   };
   const botaoOuvir = () => { const b = root.querySelector('[data-o=ouvir]'); if (b) b.innerHTML = s._anim ? `${ic('stop')}Parar` : `${ic('play')}Ouvir prévia`; };
@@ -551,6 +583,7 @@ function initOracoes() {
     const t = e.target, n = t.name;
     if (n === 'oracao') { orParar(); s.id = t.value; s._auto = false; s.legendaEditada = false; render(); return; }
     if (n === 'fonte') { orParar(); c.fonte = t.value; s.id = null; s._rssMsg = ''; s.legendaEditada = false; save(); render(); return; }
+    if (n === 'vozRitmo') { orParar(); botaoOuvir(); c.vozRitmo = +t.value; }
     if (n === 'dur') { orParar(); botaoOuvir(); s.dur = c.dur = +t.value; }
     if (n === 'mostrarData') { c.mostrarData = t.checked; redraw(); }
     save();
@@ -689,4 +722,4 @@ async function orPublicar(cv, btn, video) {
     setPub(`${ic('alert')}<div>Não foi possível publicar: ${esc(err.message)}</div>`, 'bad');
   } finally { btn.disabled = false; }
 }
-window.addEventListener('hashchange', () => orac._mic?.rec.stop());   // saiu da tela no meio da gravação da voz
+window.addEventListener('hashchange', () => orac._mic?.parar(false));   // saiu da tela no meio da gravação da voz

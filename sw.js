@@ -1,5 +1,5 @@
 // Cache do app para funcionar offline. Aumente a versão ao publicar mudanças.
-const CACHE = 'tercos-v27';
+const CACHE = 'tercos-v29';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'galeria.js', 'studio.js', 'oracoes.js','sync.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 // Só guarda os arquivos do próprio app e as fontes. Nunca o GitHub (dados) nem o postador.
 const CACHEAVEL = [self.location.origin, 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'];
