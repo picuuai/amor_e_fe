@@ -241,7 +241,9 @@ function orLayout(g, W, H) {
   for (let s2 = sz; s2 >= sz * 0.74; s2 -= 1.5 * u) { const l2 = quebra(s2); if (l2.length === frases.length) { sz = s2; lines = l2; break; } }
   const corpo = lines.length * sz * 1.42;
   const y0 = topo + Math.max(0, (area - corpo) / 2) * 0.85;                   // um pouco acima do centro
-  orac._lay = { o, u, tl, tsz, sz, lines, y0, cabec, corpo, base, maxW }; orac._layKey = key;
+  font(g, 500, sz, 'Playfair Display');
+  const origem = frases.flatMap((p, i) => (p.trim() ? wrap(g, p, maxW) : ['']).map((_, k, arr) => [i, k / arr.length]));   // [frase, fração dentro dela]
+  orac._lay = { o, u, tl, tsz, sz, lines, origem, y0, cabec, corpo, base, maxW }; orac._layKey = key;
   return orac._lay;
 }
 // t = segundos de animação (vídeo); t = null desenha a imagem final parada
@@ -270,7 +272,11 @@ function drawOracao(cv, t = null) {
   let lido = o.t.length + 10;
   g.fillStyle = cor.texto; font(g, 500, L.sz, 'Playfair Display');
   L.lines.forEach((l, i) => {
-    g.globalAlpha = vz ? fade(vz.ini + vz.dur * lido / totP - 0.3, 0.6) : fade(1.4 + janela * i / L.lines.length, 0.9);
+    if (vz?.tempos) {
+      // voz gravada com o leitor: sabemos o instante exato em que cada frase foi lida
+      const [fr, parte] = L.origem[i] || [i, 0], t0 = vz.tempos[fr] ?? vz.dur, t1 = vz.tempos[fr + 1] ?? vz.dur;
+      g.globalAlpha = fade(vz.ini + t0 + (t1 - t0) * parte - 0.15, 0.5);
+    } else g.globalAlpha = vz ? fade(vz.ini + vz.dur * lido / totP - 0.3, 0.6) : fade(1.4 + janela * i / L.lines.length, 0.9);
     lido += pesos[i]; g.fillText(l, W / 2, y + i * lh);
   });
   y += L.corpo;
@@ -367,24 +373,32 @@ async function orPrepararVoz() {
   orac._vozAuto = { chave, buffer };
   return buffer;
 }
-// grava a voz da pessoa pelo microfone, com o texto da oração na tela para acompanhar
+// grava a voz da pessoa pelo microfone. A tela mostra a oração e acende uma frase de cada vez, num ritmo calmo:
+// a pessoa lê a frase acesa, e os instantes ficam guardados para a letra do vídeo aparecer junto com a voz.
 async function orGravarVoz(aoMudar) {
   if (orac._mic) { orac._mic.parar(true); return; }
   orParar();
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch { toast('Não consegui usar o microfone. Permita o acesso no navegador e tente de novo.'); return; }
-  const o = oracaoAtual(), pedacos = [], rec = new MediaRecorder(stream);
-  // tela cheia com a oração em letra grande: contagem 3-2-1, depois grava até tocar em "Terminar"
+  const o = oracaoAtual(), frases = o.x.split('\n'), pedacos = [], rec = new MediaRecorder(stream);
+  // tempo de cada frase: tamanho do texto ÷ letras por segundo, mais um respiro
+  const lps = { devagar: 8.5, normal: 11, rapido: 14 }[orCfg().leitorRitmo] || 11;
+  const dura = txt => txt.trim() ? Math.max(1.5, txt.length / lps + 0.6) : 0;
+  const marcos = [0]; let fim = dura(o.t) + 0.5;                    // marcos[0] = título, marcos[i + 1] = frase i
+  for (const fr of frases) { marcos.push(fim); fim += dura(fr); }
   const tela = document.createElement('div'); tela.className = 'or-leitor';
   tela.innerHTML = `<div class="or-leitor-in">
     <div class="or-leitor-top"><b id="orLeitorTempo"></b><span class="grow"></span>
       <button type="button" class="btn" data-l="cancelar">Cancelar</button><button type="button" class="btn pri" data-l="terminar" disabled>${ic('stop')}Terminar</button></div>
-    <h2>${esc(o.t)}</h2>
-    <div class="or-leitor-txt">${o.x.split('\n').map(l => `<p>${esc(l)}</p>`).join('')}</div>
-    <p class="or-leitor-dica">Leia com calma, do título até o fim. Quando acabar, toque em “Terminar”.</p></div>`;
+    <div class="or-leitor-barra"><i></i></div>
+    <h2 data-m="0">${esc(o.t)}</h2>
+    <div class="or-leitor-txt">${frases.map((l, i) => l.trim() ? `<p data-m="${i + 1}">${esc(l)}</p>` : '').join('')}</div>
+    <p class="or-leitor-dica">Leia a frase que estiver acesa. Se terminar antes, toque no texto para passar para a próxima.</p></div>`;
   document.body.appendChild(tela);
-  const tempo = tela.querySelector('#orLeitorTempo'), m = orac._mic = { rec, ini: 0, salvar: false };
+  const tempo = tela.querySelector('#orLeitorTempo'), barra = tela.querySelector('.or-leitor-barra i'), partes = [...tela.querySelectorAll('[data-m]')];
+  const m = orac._mic = { rec, ini: 0, salvar: false }, t00 = Date.now();
+  let atual = -1;
   m.parar = salvar => {
     m.salvar = salvar && m.ini > 0; clearInterval(m.relogio);
     if (rec.state !== 'inactive') rec.stop(); else rec.onstop();
@@ -393,21 +407,42 @@ async function orGravarVoz(aoMudar) {
   rec.onstop = async () => {
     stream.getTracks().forEach(t => t.stop()); clearInterval(m.relogio); tela.remove(); orac._mic = null;
     if (m.salvar) {
-      try { orac._minhaVoz = { id: o.id, buffer: await orDecodAudio(await new Blob(pedacos, { type: rec.mimeType }).arrayBuffer()) }; }
-      catch { toast('Não consegui ler a gravação. Tente de novo.'); }
+      try {
+        const buffer = await orDecodAudio(await new Blob(pedacos, { type: rec.mimeType }).arrayBuffer());
+        orac._minhaVoz = { id: o.id, buffer, tempos: marcos.slice(1).map(t => Math.min(t, buffer.duration)) };   // instante de cada frase
+      } catch { toast('Não consegui ler a gravação. Tente de novo.'); }
     }
     aoMudar();
   };
-  tela.addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (b) m.parar(b.dataset.l === 'terminar'); });
-  let falta = 3;
+  tela.addEventListener('click', e => {
+    const b = e.target.closest('[data-l]');
+    if (b) { m.parar(b.dataset.l === 'terminar'); return; }
+    // toque no texto: adianta a próxima frase para agora (quem lê mais rápido não fica esperando)
+    if (!m.ini) return;
+    const agora = (Date.now() - m.ini) / 1000, prox = atual + 1, corte = (prox < marcos.length ? marcos[prox] : fim) - agora;
+    if (corte <= 0.15) return;
+    for (let k = prox; k < marcos.length; k++) marcos[k] -= corte;
+    fim -= corte;
+  });
   const passo = () => {
     if (orac._mic !== m) return;
-    if (falta > 0) { tempo.textContent = `Prepare-se… ${falta--}`; return; }
-    if (!m.ini) { m.ini = Date.now(); rec.start(); tela.classList.add('gravando'); tela.querySelector('[data-l=terminar]').disabled = false; }
-    tempo.textContent = `● Gravando  ${Math.floor((Date.now() - m.ini) / 1000)} s`;
-    aoMudar();
+    const falta = 3 - Math.floor((Date.now() - t00) / 1000);
+    if (falta > 0) { tempo.textContent = `Prepare-se… ${falta}`; return; }
+    if (!m.ini) { m.ini = Date.now(); rec.start(); tela.classList.add('gravando'); tela.querySelector('[data-l=terminar]').disabled = false; aoMudar(); }
+    const agora = (Date.now() - m.ini) / 1000;
+    let i = 0; while (i + 1 < marcos.length && marcos[i + 1] <= agora) i++;
+    if (i !== atual) {
+      atual = i;
+      for (const p of partes) { const k = +p.dataset.m; p.classList.toggle('lida', k < i); p.classList.toggle('acesa', k === i); }
+      tela.querySelector('.acesa')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    // barrinha: quanto falta da frase acesa
+    const a0 = marcos[atual], a1 = atual + 1 < marcos.length ? marcos[atual + 1] : fim;
+    barra.style.width = Math.min(100, Math.max(0, (agora - a0) / (a1 - a0) * 100)) + '%';
+    tempo.textContent = `● Gravando  ${Math.floor(agora)} s`;
+    if (agora > fim + 1.2) m.parar(true);                           // acabou a última frase: termina sozinho
   };
-  passo(); m.relogio = setInterval(passo, 1000); aoMudar();
+  passo(); m.relogio = setInterval(passo, 100); aoMudar();
 }
 
 // toca a animação com a música (e a voz, se houver); com gravar=true devolve o vídeo (Blob) no final
@@ -416,7 +451,7 @@ function orAnimar(cv, gravar, aCada, voz) {
   return new Promise(fim => {
     // com voz, o vídeo dura pelo menos o tempo da leitura mais um respiro no final
     const dur = Math.max(orac.dur, voz ? Math.ceil(voz.duration + 4.5) : 0), a = orac._anim = { fim, raf: 0 };
-    orac._durAnim = dur; orac._vozAnim = voz ? { ini: 1.3, dur: voz.duration } : null;
+    orac._durAnim = dur; orac._vozAnim = voz ? { ini: 1.3, dur: voz.duration, tempos: orac.voz === 'minha' ? orac._minhaVoz?.tempos : null } : null;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (AC && (orac.trilha !== 'nenhuma' || voz)) {
       a.ctx = new AC(); a.ctx.resume?.();
@@ -525,6 +560,8 @@ function viewOracoes() {
         <div class="sec" style="margin-top:4px">Voz lendo a oração</div>
         ${chips('voz', OR_VOZES, false)}
         ${s.voz === 'minha' ? `<div class="or-dia" style="margin:-4px 0 12px"><span id="orVozMsg" class="hint" style="flex:1;margin:0"></span><button type="button" class="btn sm" data-o="gravarVoz"></button></div>` : ''}
+        ${s.voz === 'minha' ? `<label>Velocidade do texto na gravação<select name="leitorRitmo">${[['devagar', 'Devagar'], ['normal', 'Normal'], ['rapido', 'Rápido']].map(([v, l]) => `<option value="${v}" ${v === (c.leitorRitmo || 'normal') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <p class="hint" style="margin:-6px 0 12px">Na gravação, cada frase acende na hora de ser lida. No vídeo, a letra aparece nesses mesmos instantes, junto com a sua voz.</p>` : ''}
         ${s.voz === 'Maria' || s.voz === 'Daniel' ? `<label>Ritmo da leitura<select name="vozRitmo">${[[-16, 'Calmo, de oração'], [-6, 'Natural'], [2, 'Mais rápido']].map(([v, l]) => `<option value="${v}" ${v === (c.vozRitmo ?? -16) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <p class="hint" style="margin:-6px 0 12px">Voz do Windows, gerada neste computador pelo postador. O vídeo se estica sozinho se a leitura passar da duração escolhida.</p>` : ''}
         <label>Duração do vídeo<select name="dur">${OR_DURACOES.map(d => `<option value="${d}" ${d === s.dur ? 'selected' : ''}>${d} segundos</option>`).join('')}</select></label>
@@ -583,6 +620,7 @@ function initOracoes() {
     const t = e.target, n = t.name;
     if (n === 'oracao') { orParar(); s.id = t.value; s._auto = false; s.legendaEditada = false; render(); return; }
     if (n === 'fonte') { orParar(); c.fonte = t.value; s.id = null; s._rssMsg = ''; s.legendaEditada = false; save(); render(); return; }
+    if (n === 'leitorRitmo') c.leitorRitmo = t.value;
     if (n === 'vozRitmo') { orParar(); botaoOuvir(); c.vozRitmo = +t.value; }
     if (n === 'dur') { orParar(); botaoOuvir(); s.dur = c.dur = +t.value; }
     if (n === 'mostrarData') { c.mostrarData = t.checked; redraw(); }
