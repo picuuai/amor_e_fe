@@ -303,6 +303,7 @@ summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--pri);margin-bo
 .st-ctrl{display:flex;flex-direction:column}
 .or-prog{height:5px;border-radius:9px;background:var(--line);margin:10px 0 0;overflow:hidden}
 .or-prog i{display:block;height:100%;width:0;background:var(--pri)}
+.or-video{display:block;max-width:100%;max-height:260px;border-radius:10px;margin:8px 0 0;background:#000}
 .or-dia{display:flex;align-items:center;gap:8px;margin:0 0 14px}
 .or-dia b{flex:1;text-align:center}
 @media (max-width:420px){.nav a{font-size:10.5px}}

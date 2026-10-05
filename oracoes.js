@@ -351,7 +351,7 @@ function orAnimar(cv, gravar, aCada) {
     if (gravar) {
       const stream = cv.captureStream(30), pedacos = [], mime = orMime();
       if (a.saida) { const d = a.ctx.createMediaStreamDestination(); a.saida.connect(d); d.stream.getAudioTracks().forEach(t => stream.addTrack(t)); }
-      a.rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 7e6, audioBitsPerSecond: 160000 });
+      a.rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5e6, audioBitsPerSecond: 160000 });
       a.rec.ondataavailable = e => e.data.size && pedacos.push(e.data);
       a.rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); if (!a.cancelado) fim(new Blob(pedacos, { type: mime.split(';')[0] })); };
       a.rec.start(500);
@@ -479,6 +479,7 @@ function initOracoes() {
     const chip = e.target.closest('.chip[data-k]');
     if (chip) {
       const k = chip.dataset.k; orParar(); botaoOuvir(); prog(null);
+      if (s._video) { s._video = null; setPub(''); }   // o vídeo gravado era do visual/música anterior
       s[k] = c[k] = chip.dataset.v;
       $$(`.chip[data-k="${k}"]`, root).forEach(b => b.classList.toggle('on', b === chip));
       save(); redraw(); return;
@@ -508,14 +509,25 @@ function initOracoes() {
       const blob = await orAnimar(cv, true, prog);
       delete b.dataset.gravando; b.innerHTML = `${ic('video')}<span>Vídeo com música</span>`; prog(null);
       if (!blob) { setPub(''); return; }
-      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm', nome = `oracao-${s.data}-${slug(o.t)}.${ext}`;
-      const copiou = await orCopiar(true);
-      if (noCelular() && await orCompartilhar(new File([blob], nome, { type: blob.type }), 'video')) return;
-      download(nome, blob, blob.type);
-      setPub(`${ic('check')}<div><b>Vídeo salvo em Downloads</b>${copiou ? ' e legenda copiada' : ''}. No Instagram: Criar → Reel → escolha o arquivo → cole a legenda.
-        ${ext === 'webm' ? '<br>Atenção: saiu em .webm; o Instagram só aceita .mp4 (use o Chrome ou o Edge atualizados).' : ''}
-        <button type="button" class="btn sm" data-o="marcar" data-tipo="video">Já postei</button></div>`, 'ok');
+      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+      if (s._video) URL.revokeObjectURL(s._video.url);
+      s._video = { blob, ext, nome: `oracao-${s.data}-${slug(o.t)}.${ext}`, url: URL.createObjectURL(blob) };
+      // o vídeo fica guardado aqui e cada botão age na hora do clique (o navegador bloqueia download "atrasado")
+      setPub(`${ic('check')}<div style="min-width:0"><b>Vídeo pronto</b> (${s.dur} s, ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB). Confira e escolha:
+        <video class="or-video" src="${s._video.url}" controls playsinline></video>
+        ${ext === 'webm' ? '<div>Atenção: saiu em .webm; o Instagram só aceita .mp4 (use o Chrome ou o Edge atualizados).</div>' : ''}
+        <div class="bar" style="margin:8px 0 0">${noCelular()
+          ? `<button type="button" class="btn sm pri" data-o="shareVideo">${ic('share')}Postar vídeo</button>`
+          : `<button type="button" class="btn sm pri" data-o="pubVideo" ${ext === 'mp4' ? '' : 'disabled'}>${ic('instagram')}Publicar Reel</button>`}
+          <button type="button" class="btn sm" data-o="baixarVideo">${ic('download')}Baixar vídeo</button></div></div>`, 'ok');
     }
+    if (a === 'baixarVideo' && s._video) {
+      const copiou = await orCopiar(true);
+      Object.assign(document.createElement('a'), { href: s._video.url, download: s._video.nome }).click();
+      toast('Vídeo salvo em Downloads' + (copiou ? ' e legenda copiada.' : '.'));
+    }
+    if (a === 'shareVideo' && s._video) await orCompartilhar(new File([s._video.blob], s._video.nome, { type: s._video.blob.type }), 'video');
+    if (a === 'pubVideo' && s._video) orPublicar(cv, b, s._video);
     if (a === 'marcar') { orRegistrar(b.dataset.tipo, 'publicado'); render(); toast('Oração marcada como postada.'); }
   });
   setLeg(); drawOracao(cv); fitCanvas(cv); refreshIg(); orAtualizarRss();
@@ -552,31 +564,36 @@ async function orCompartilhar(file, tipo) {
   if (tipo === 'imagem') { download(file.name, file, file.type); toast('Imagem baixada' + (copiou ? ' e legenda copiada' : '') + '.'); orOferecerMarcar(tipo); }
   return false;
 }
-async function orPublicar(cv, btn) {
+// publica pelo postador: a imagem do cartão ou, com "video", o Reel gravado
+async function orPublicar(cv, btn, video) {
   const s = orac, o = oracaoAtual();
-  if (s.formato === 'story') { toast('O formato 9:16 é para Reels/Stories: grave o “Vídeo com música” ou escolha Feed 4:5 para publicar a imagem.'); return; }
+  if (!video && s.formato === 'story') { toast('O formato 9:16 é para Reels/Stories: grave o “Vídeo com música” ou escolha Feed 4:5 para publicar a imagem.'); return; }
   const st = await postadorStatus();
   if (!st || st.logado === false) {
     modal({ title: !st ? 'Postador desligado' : 'Entre no Instagram', body: `<div class="ig-box">${igBoxHTML(st)}</div><p class="hint" style="margin-top:14px">Ou use “Baixar imagem” e “Copiar legenda” e publique pelo Instagram.</p>`, onOpen: refreshIg });
     return;
   }
   if (st.ocupado === 'login') { toast('Termine o login na janela do Instagram primeiro.'); return; }
-  if (!confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\nOração do dia: “${o.t}” — ${OR_ESTILOS[s.estilo][0]}, ${OR_FORMATOS[s.formato][2]}.`)) return;
+  if (!confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\nOração do dia: “${o.t}” — ${video ? `Reel de ${s.dur} s com música` : `${OR_ESTILOS[s.estilo][0]}, ${OR_FORMATOS[s.formato][2]}`}.`)) return;
   btn.disabled = true;
   try {
+    const midia = video
+      ? { video: await new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => err(new Error('não consegui ler o vídeo')); fr.readAsDataURL(video.blob); }) }
+      : { imagem: cv.toDataURL('image/jpeg', 0.92) };
+    setPub(`${ic('refresh')}<div>Enviando ${video ? 'o vídeo' : 'a imagem'} para o postador…</div>`);
     const r = await fetch(POSTADOR + '/publicar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imagem: cv.toDataURL('image/jpeg', 0.92), legenda: s.legenda, formato: s.formato, titulo: 'Oração: ' + o.t, oculto: true }),
+      body: JSON.stringify({ ...midia, legenda: s.legenda, formato: s.formato, titulo: 'Oração: ' + o.t, oculto: true }),
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.erro || 'o postador recusou o pedido');
-    const reg = orRegistrar('imagem', 'enviado');
-    setPub(`${ic('refresh')}<div>Publicando em segundo plano. Pode continuar usando o app — o Windows avisa quando terminar.</div>`);
-    const fim = Date.now() + 5 * 60e3;
+    const reg = orRegistrar(video ? 'video' : 'imagem', 'enviado');
+    setPub(`${ic('refresh')}<div>Publicando em segundo plano${video ? ' (vídeo demora alguns minutos para subir)' : ''}. Pode continuar usando o app — o Windows avisa quando terminar.</div>`);
+    const fim = Date.now() + (video ? 12 : 5) * 60e3;
     while (Date.now() < fim) {
       await new Promise(ok => setTimeout(ok, 3000));
       let job; try { job = await (await fetch(`${POSTADOR}/job/${j.job}`)).json(); } catch { continue; }
-      if (job.status === 'publicado') { reg.status = 'publicado'; save(); setPub(`${ic('check')}<div><b>Oração publicada no Instagram!</b></div>`, 'ok'); toast('Publicado no Instagram!'); return; }
+      if (job.status === 'publicado') { reg.status = 'publicado'; save(); setPub(`${ic('check')}<div><b>${video ? 'Reel publicado' : 'Oração publicada'} no Instagram!</b></div>`, 'ok'); toast('Publicado no Instagram!'); return; }
       if (job.status === 'conferir') { reg.status = 'conferir'; save(); setPub(`${ic('alert')}<div>O postador terminou mas não viu a confirmação. Confira no Instagram se o post apareceu.</div>`, 'warn'); return; }
       if (job.status === 'erro') { reg.status = 'erro'; save(); setPub(`${ic('alert')}<div>Não foi possível publicar: ${esc(job.erro || '')}</div>`, 'bad'); return; }
     }
