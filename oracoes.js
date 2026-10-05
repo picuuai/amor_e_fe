@@ -56,13 +56,121 @@ const OR_TRILHAS = {
 const OR_DURACOES = [15, 20, 30, 45];
 
 const orac = { data: null, id: null, estilo: null, formato: null, trilha: null, dur: null, legenda: '', legendaEditada: false, _lay: null, _layKey: '', _bg: null, _bgKey: '', _anim: null };
-const orCfg = () => (db.params.oracao ||= { estilo: 'celestial', formato: 'retrato', trilha: 'serena', dur: 20, mostrarData: true });
-const oracoesTodas = () => [...ORACOES, ...(db.oracoes || [])];
-const oracaoDoDia = data => { const l = oracoesTodas(), n = daysBetween('2026-01-01', data); return l[((n % l.length) + l.length) % l.length]; };
+const orCfg = () => { const c = (db.params.oracao ||= { estilo: 'celestial', formato: 'retrato', trilha: 'serena', dur: 20, mostrarData: true }); if (!c.fonteV2) { c.fonte = 'salmo'; c.fonteV2 = 1; } return c; };
+const oracoesRodizio = () => [...ORACOES, ...(db.oracoes || [])];
+const oracoesTodas = () => [...oracoesRodizio(), ...(db.oracoesRss || [])];
+// oração do dia: a que veio do site (RSS) para aquela data; se não houver, a do rodízio do app
+const oracaoDoDia = data => {
+  const f = orCfg().fonte, doSite = f !== 'app' && (db.oracoesRss || []).find(o => o.data === data && (o.fonte || 'rss') === f);
+  if (doSite) return doSite;
+  const l = oracoesRodizio(), n = daysBetween('2026-01-01', data); return l[((n % l.length) + l.length) % l.length];
+};
 const oracaoAtual = () => oracoesTodas().find(o => o.id === orac.id) || oracaoDoDia(orac.data || today());
 const oracaoPostada = data => (db.oracoesPosts || []).some(p => p.data === data && p.status !== 'erro');
 const dataExtenso = d => new Date(d + 'T12:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
 const somaDias = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+
+/* ---------- oração do dia vinda de um site (RSS) ---------- */
+// O feed "Prayer of the Day" do Catholic Online vem em inglês e o site não deixa o navegador ler direto:
+// quem baixa é o postador (neste computador); o texto é traduzido e fica salvo em db.oracoesRss,
+// então o celular recebe pela sincronização. Sem conseguir buscar, vale o rodízio do app.
+const RSS_URL = 'https://www.catholic.org/xml/rss_pofd.php';
+const RSS_NOME = 'Catholic Online';
+const orDecod = s => { const t = document.createElement('textarea'); t.innerHTML = s; t.innerHTML = t.value; return t.value; };
+async function rssBaixar() {
+  const fontes = [
+    async () => { const j = await (await fetch(POSTADOR + '/rss', { signal: AbortSignal.timeout(25000) })).json(); if (!j.ok) throw 0; return j.xml; },
+    ...['https://api.allorigins.win/raw?url=', 'https://api.codetabs.com/v1/proxy?quest='].map(p => async () => {
+      const r = await fetch(p + encodeURIComponent(RSS_URL), { signal: AbortSignal.timeout(15000) }); if (!r.ok) throw 0; return r.text();
+    }),
+  ];
+  for (const f of fontes) { try { const x = await f(); if (x && x.includes('<item')) return x; } catch { } }
+  return null;
+}
+function rssItens(xml) {
+  const campo = (it, n) => orDecod((it.match(new RegExp(`<${n}[^>]*>([\\s\\S]*?)</${n}>`)) || [, ''])[1].replace(/^\s*<!\[CDATA\[|\]\]>\s*$/g, ''));
+  return (xml.match(/<item>[\s\S]*?<\/item>/g) || []).map(it => {
+    const link = campo(it, 'link').trim(), data = ((link + ' ' + campo(it, 'pubDate')).match(/(\d{4}-\d\d-\d\d)/) || [])[1];
+    const t = campo(it, 'title').split(/:\s*Prayer of the Day/i)[0].replace(/\s*#\s*\d+\s*$/, '').trim();
+    let x = campo(it, 'description').replace(/<[^>]+>/g, ' ').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+    // o feed corta as orações longas com "..."; fica só até a última frase completa (e cabe melhor no cartão)
+    if (/\.\.\.$/.test(x) || x.length > 560) {
+      x = x.replace(/\.\.\.$/, '').slice(0, 560);
+      const fim = Math.max(...['.', '!', '?'].map(p => x.lastIndexOf(p)));
+      x = fim > 140 ? x.slice(0, fim + 1) : x.slice(0, Math.max(x.lastIndexOf('\n'), 0) || x.length).replace(/[,;:\s]+$/, '') + '.';
+    }
+    return data && t && x ? { data, t, x, link } : null;
+  }).filter(Boolean);
+}
+async function orTraduzir(texto) {
+  const blocos = []; let cur = '';
+  for (const l of texto.split('\n')) { if (cur && (cur + '\n' + l).length > 430) { blocos.push(cur); cur = l; } else cur = cur ? cur + '\n' + l : l; }
+  if (cur) blocos.push(cur);
+  const out = [];
+  for (const b of blocos) {
+    const j = await (await fetch('https://api.mymemory.translated.net/get?langpair=en|pt-BR&q=' + encodeURIComponent(b), { signal: AbortSignal.timeout(20000) })).json();
+    const tr = j.responseData?.translatedText;
+    if (+j.responseStatus !== 200 || !tr || /MYMEMORY WARNING/i.test(tr)) throw new Error('o tradutor gratuito atingiu o limite de hoje');
+    out.push(orDecod(tr));
+  }
+  return out.join('\n');
+}
+// Salmo da liturgia do dia, já em português, do Evangelho Quotidiano (evangelizo.org).
+// O feed deles aceita leitura direta pelo navegador (funciona no celular, sem postador) e tem qualquer data.
+const SALMO_NOME = 'Evangelho Quotidiano';
+async function salmoBaixar(data) {
+  const ler = async q => {
+    const r = await fetch(`https://feed.evangelizo.org/v2/reader.php?date=${data.replace(/-/g, '')}&lang=PT&${q}`, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error('o site não respondeu');
+    const txt = await r.text();
+    // fora do intervalo (só até 30 dias de hoje) o site devolve a página de ajuda em vez do texto
+    if (/Reader Evangelizo/i.test(txt)) throw new Error('o site só tem os salmos até 30 dias de hoje');
+    return orDecod(txt.replace(/\s*<br\s*\/?>[ \t]*\r?\n?/gi, '\n').replace(/<[^>]+>/g, ''));
+  };
+  const [texto, ref, dia] = await Promise.all([ler('type=reading&content=PS'), ler('type=reading_lt&content=PS'), ler('type=liturgic_t').catch(() => '')]);
+  // tira o rodapé do site e separa as estrofes
+  const estrofes = texto.split(/Tradução litúrgica|Para receber/)[0].split(/\n\s*\n/).map(e => e.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean)).filter(e => e.length);
+  const num = (ref.match(/(\d+)\s*\((\d+)\)/) || ref.match(/(\d+)/) || [])[1];
+  if (!estrofes.length || !num) return null;
+  // no cartão vai o começo (até umas 9 linhas, sempre estrofes inteiras); a legenda leva o salmo todo
+  let cartao = [];
+  for (const e of estrofes) { if (cartao.length && cartao.length + e.length > 9) break; cartao = cartao.concat(e); }
+  return { id: 'sl-' + data, rss: true, fonte: 'salmo', data, t: 'Salmo ' + num, x: cartao.join('\n').replace(/[,;:]$/, '.'), a: dia.replace(/\s+/g, ' ').trim(),
+    completo: estrofes.map(e => e.join('\n')).join('\n\n'), link: 'https://evangelhoquotidiano.org/PT/gospel/' + data };
+}
+// busca a oração do dia na fonte escolhida, se ainda não temos (uma tentativa a cada 10 min por dia, salvo "Buscar agora")
+async function orAtualizarRss(forcar) {
+  const c = orCfg(), fonte = c.fonte, hoje = today(), nome = fonte === 'salmo' ? SALMO_NOME : RSS_NOME;
+  const dia = fonte === 'salmo' && location.hash === '#oracoes' && orac.data ? orac.data : hoje;
+  const tem = d => (db.oracoesRss || []).some(o => o.data === d && (o.fonte || 'rss') === fonte);
+  if (fonte === 'app' || orac._rssBusy) return;
+  const chave = fonte + dia;
+  if (!forcar && (tem(dia) || Date.now() - ((orac._rssTent ||= {})[chave] || 0) < 10 * 60e3)) return;
+  const aviso = (msg, tone = '') => { orac._rssMsg = msg; orac._rssTone = tone; const el = $('#orRss'); if (el) { el.textContent = msg; el.className = 'hint ' + tone; } };
+  orac._rssBusy = true; (orac._rssTent ||= {})[chave] = Date.now(); aviso(`Buscando no ${nome}…`);
+  try {
+    let novos = 0;
+    if (fonte === 'salmo') {
+      if (!tem(dia)) { const s = await salmoBaixar(dia); if (s) { (db.oracoesRss ||= []).push(s); novos++; } }
+    } else {
+      const xml = await rssBaixar();
+      if (!xml) throw new Error(`não consegui abrir o ${nome} (o postador precisa estar ligado neste computador)`);
+      for (const i of rssItens(xml).filter(i => i.data >= hoje && !tem(i.data)).slice(0, 2)) {
+        let x = await orTraduzir(i.x); const t = (await orTraduzir(i.t)).replace(/\.$/, '');
+        if (!/am[ée]m[.!]?\s*$/i.test(x)) x += '\nAmém.';
+        (db.oracoesRss ||= []).push({ id: 'rss-' + i.data, rss: true, fonte: 'rss', data: i.data, t, x, a: '', link: i.link, original: { t: i.t, x: i.x } });
+        novos++;
+      }
+    }
+    db.oracoesRss = (db.oracoesRss || []).sort((a, b) => a.data.localeCompare(b.data)).slice(-60);
+    if (novos) save();
+    aviso(tem(dia) ? `Recebido do ${nome}.` : `O ${nome} não tem nada para este dia — usando a lista do app.`, tem(dia) ? 'ok' : '');
+    // troca a oração na tela só se a pessoa não tinha escolhido outra à mão
+    const r = location.hash.slice(1);
+    if (novos && !dlg.open && !orac._anim && (r === 'oracoes' || r === 'inicio' || !r)) { if (orac._auto) orac.id = null; render(); }
+  } catch (e) { aviso(`Não deu para buscar agora: ${e.message || 'sem conexão'}. Usando a lista do app.`, 'neg'); }
+  finally { orac._rssBusy = false; }
+}
 
 /* ---------- desenho ---------- */
 function orFundo(W, H) {
@@ -266,8 +374,9 @@ function orAnimar(cv, gravar, aCada) {
 function gerarLegendaOracao() {
   const o = oracaoAtual(), c = divCfg();
   const marca = (c.instagram.trim() || db.params.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  return [`🙏 Oração do dia — ${o.t}`, '', o.x + (o.a ? `\n(${o.a})` : ''), '',
-    '✨ Salve para rezar depois e envie para alguém que precisa desta oração hoje.', '📿 Reze com a gente todos os dias.', '',
+  const salmo = o.fonte === 'salmo';
+  return [salmo ? `🙏 Salmo do dia — ${o.t}` : `🙏 Oração do dia — ${o.t}`, '', (o.completo || o.x) + (o.a ? `\n(${o.a})` : ''), '',
+    '✨ Salve para rezar depois e envie para alguém que precisa desta oração hoje.', '📿 Reze com a gente todos os dias.', ...(salmo ? [`(Salmo da liturgia do dia — ${SALMO_NOME}, evangelizo.org)`] : o.rss ? [`(Oração traduzida de ${RSS_NOME})`] : []), '',
     ['#oração', '#oraçãododia', '#fé', '#católico', '#igrejacatólica', '#terço', '#nossasenhora', '#deus', '#amém', '#gratidão', marca && '#' + marca].filter(Boolean).join(' ')].join('\n');
 }
 
@@ -275,8 +384,8 @@ function gerarLegendaOracao() {
 function viewOracoes() {
   const s = orac, c = orCfg();
   s.data ||= today(); s.estilo ||= c.estilo; s.formato ||= c.formato; s.trilha ||= c.trilha; s.dur ||= c.dur;
-  if (!oracoesTodas().some(o => o.id === s.id)) s.id = oracaoDoDia(s.data).id;
-  const o = oracaoAtual(), hoje = s.data === today(), propria = (db.oracoes || []).some(x => x.id === o.id);
+  if (!oracoesTodas().some(o => o.id === s.id)) { s.id = oracaoDoDia(s.data).id; s._auto = true; }
+  const o = oracaoAtual(), hoje = s.data === today(), propria = o.rss || (db.oracoes || []).some(x => x.id === o.id);
   const chips = (k, obj, sw) => `<div class="chips">${Object.entries(obj).map(([v, d]) => `<button type="button" class="chip ${v === s[k] ? 'on' : ''}" data-k="${k}" data-v="${v}">${sw ? `<span class="sw" style="background:${d[1]}"></span>${d[0]}` : (d[2] || d.nome)}</button>`).join('')}</div>`;
   const video = orMime(), mp4 = video?.startsWith('video/mp4');
   const posts = [...(db.oracoesPosts || [])].reverse().slice(0, 10);
@@ -302,9 +411,16 @@ function viewOracoes() {
           <b>${hoje ? 'Hoje' : new Date(s.data + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short' })}, ${dataExtenso(s.data)}</b>
           <button type="button" class="btn sm" data-o="amanha" aria-label="Dia seguinte">${ic('chevron')}</button>
           ${hoje ? '' : `<button type="button" class="btn sm" data-o="hoje">Hoje</button>`}</div>
-        <label>Oração deste dia<select name="oracao">${opts(oracoesTodas(), o.id, x => x.t)}</select></label>
-        <p class="hint" style="margin:-6px 0 12px">O app sugere uma oração diferente a cada dia (${oracoesTodas().length} no rodízio). Você pode trocar ou cadastrar as suas.</p>
-        ${propria ? `<button type="button" class="btn sm" data-o="editar">Editar esta oração</button>` : ''}
+        <label>Oração deste dia<select name="oracao">${opts(oracoesTodas(), o.id, x => x.rss ? `${x.t} (${x.fonte === 'salmo' ? 'salmo' : 'do site'}, ${fdate(x.data).slice(0, 5)})` : x.t)}</select></label>
+        ${o.rss ? `<div class="alert ${o.fonte === 'salmo' ? 'info' : o.revisada ? 'ok' : 'warn'}" style="margin:0 0 12px">${ic(o.fonte === 'salmo' ? 'pray' : o.revisada ? 'check' : 'alert')}<div>${o.fonte === 'salmo' ? `<b>Salmo da liturgia deste dia</b>, do ${SALMO_NOME}. O cartão mostra o começo; a legenda leva o salmo inteiro.` : o.revisada ? 'Tradução revisada por você.' : `<b>Tradução automática do inglês.</b> Leia e ajuste antes de postar.`}
+          <div class="bar" style="margin:8px 0 0"><button type="button" class="btn sm" data-o="editar">Revisar texto</button><a class="btn sm" href="${esc(o.link)}" target="_blank" rel="noopener">Ver original</a></div></div></div>` : ''}
+        <label>De onde vem a oração de cada dia<select name="fonte">
+          <option value="salmo" ${c.fonte === 'salmo' ? 'selected' : ''}>Salmo do dia — ${SALMO_NOME} (em português)</option>
+          <option value="rss" ${c.fonte === 'rss' ? 'selected' : ''}>Oração do dia — ${RSS_NOME} (inglês, tradução automática)</option>
+          <option value="app" ${c.fonte === 'app' ? 'selected' : ''}>Lista do app (${oracoesRodizio().length} orações em rodízio)</option></select></label>
+        ${c.fonte !== 'app' ? `<div class="or-dia" style="margin:-4px 0 0"><span id="orRss" class="hint ${s._rssTone || ''}" style="flex:1;margin:0">${esc(s._rssMsg || 'O app busca a oração nova sozinho quando você abre. Se o site não responder, usa a lista do app.')}</span>
+          <button type="button" class="btn sm" data-o="rss">${ic('refresh')}Buscar agora</button></div>` : ''}
+        ${propria && !o.rss ? `<button type="button" class="btn sm" data-o="editar">Editar esta oração</button>` : ''}
       </div>
       <div class="card c-modelo"><div class="card-h">${ic('sparkles')}<h3>2. Visual</h3></div>
         ${chips('estilo', OR_ESTILOS, true)}
@@ -334,11 +450,11 @@ function formOracao(o) {
     onSave: root => {
       const t = F(root, 't').trim(), x = F(root, 'x').trim();
       if (!t || !x) { toast('Escreva o título e o texto.'); return false; }
-      if (o) Object.assign(o, { t, x, a: F(root, 'a').trim() });
-      else { const nova = { id: uid(), t, x, a: F(root, 'a').trim() }; (db.oracoes ||= []).push(nova); orac.id = nova.id; }
+      if (o) Object.assign(o, { t, x, a: F(root, 'a').trim() }, o.rss ? { revisada: true } : {});
+      else { const nova = { id: uid(), t, x, a: F(root, 'a').trim() }; (db.oracoes ||= []).push(nova); orac.id = nova.id; orac._auto = false; }
       orac.legendaEditada = false;
     },
-    onDelete: o && (() => { db.oracoes = db.oracoes.filter(x => x !== o); orac.id = null; }),
+    onDelete: o && (() => { db.oracoes = (db.oracoes || []).filter(x => x !== o); db.oracoesRss = (db.oracoesRss || []).filter(x => x !== o); orac.id = null; }),
   });
 }
 
@@ -353,7 +469,8 @@ function initOracoes() {
   root.addEventListener('input', e => { if (e.target.name === 'legenda') { s.legenda = e.target.value; s.legendaEditada = true; } });
   root.addEventListener('change', e => {
     const t = e.target, n = t.name;
-    if (n === 'oracao') { orParar(); s.id = t.value; s.legendaEditada = false; render(); return; }
+    if (n === 'oracao') { orParar(); s.id = t.value; s._auto = false; s.legendaEditada = false; render(); return; }
+    if (n === 'fonte') { orParar(); c.fonte = t.value; s.id = null; s._rssMsg = ''; s.legendaEditada = false; save(); render(); return; }
     if (n === 'dur') { orParar(); botaoOuvir(); s.dur = c.dur = +t.value; }
     if (n === 'mostrarData') { c.mostrarData = t.checked; redraw(); }
     save();
@@ -372,7 +489,8 @@ function initOracoes() {
     if (a === 'amanha') trocaDia(somaDias(s.data, 1));
     if (a === 'hoje') trocaDia(today());
     if (a === 'nova') formOracao();
-    if (a === 'editar') formOracao((db.oracoes || []).find(x => x.id === o.id));
+    if (a === 'editar') formOracao(o);
+    if (a === 'rss') orAtualizarRss(true);
     if (a === 'regen') { s.legendaEditada = false; setLeg(); }
     if (a === 'copy') orCopiar();
     if (a === 'ouvir') {
@@ -400,7 +518,7 @@ function initOracoes() {
     }
     if (a === 'marcar') { orRegistrar(b.dataset.tipo, 'publicado'); render(); toast('Oração marcada como postada.'); }
   });
-  setLeg(); drawOracao(cv); fitCanvas(cv); refreshIg();
+  setLeg(); drawOracao(cv); fitCanvas(cv); refreshIg(); orAtualizarRss();
   Promise.all(['700 60px "Playfair Display"', '500 40px "Playfair Display"', 'italic 500 40px "Playfair Display"', '700 30px "Plus Jakarta Sans"'].map(f => document.fonts.load(f)))
     .then(() => { if (cv.isConnected) { s._layKey = ''; redraw(); } }, () => { });
 }

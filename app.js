@@ -1075,6 +1075,7 @@ document.addEventListener('DOMContentLoaded', () => {
   load();
   if (typeof Sync !== 'undefined') Sync.init(); // antes do render: trata o link do QR Code (#conectar=…)
   render();
+  if (!document.body.classList.contains('locked')) orAtualizarRss(); // oração do dia vinda do site
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 });
