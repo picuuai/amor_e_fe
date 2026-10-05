@@ -301,6 +301,11 @@ summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--pri);margin-bo
 .zoom-row label{flex:1;margin-bottom:12px}
 .zoom-row .btn{margin-bottom:12px}
 .st-ctrl{display:flex;flex-direction:column}
+.or-prog{height:5px;border-radius:9px;background:var(--line);margin:10px 0 0;overflow:hidden}
+.or-prog i{display:block;height:100%;width:0;background:var(--pri)}
+.or-dia{display:flex;align-items:center;gap:8px;margin:0 0 14px}
+.or-dia b{flex:1;text-align:center}
+@media (max-width:420px){.nav a{font-size:10.5px}}
 /* estúdio no celular: prévia fixa no topo, "Modelo" primeiro, botões fixos embaixo */
 @media (max-width:999px){
   .studio{gap:12px;padding-bottom:84px}

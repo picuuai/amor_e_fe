@@ -69,6 +69,11 @@ const ICONS = {
   share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  pray: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 21H20v-3"/><path d="M12 6.5v8M9 9.5h6"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
+  play: '<path d="M7 4.5v15l12-7.5z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  video: '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="m16 10.5 5-3v9l-5-3"/>',
 };
 const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 
@@ -291,6 +296,7 @@ const ROUTES = {
   estoque: ['Estoque', viewEstoque], mais: ['Cadastros', viewMais],
   galeria: ['Galeria de fotos', () => viewGaleria()],
   divulgar: ['Criar post', () => viewDivulgar(), 'galeria'],
+  oracoes: ['Oração do dia', () => viewOracoes()],
   produtos: ['Produtos e preços', viewProdutos, 'mais'], insumos: ['Insumos', viewInsumos, 'mais'],
   compras: ['Compras de insumos', viewCompras, 'mais'], clientes: ['Clientes', viewClientes, 'mais'],
   config: ['Configurações', viewConfig, 'mais'], instagram: ['Instagram', () => viewInstagram(), 'mais'],
@@ -324,6 +330,7 @@ function render() {
   $('#view').innerHTML = fn();
   if (r === 'divulgar') initStudio();
   if (r === 'galeria') initGaleria();
+  if (r === 'oracoes') initOracoes();
   if (r === 'instagram') refreshIg();
   if (typeof Sync !== 'undefined') Sync.pintar();
 }
@@ -372,6 +379,7 @@ function viewInicio() {
     alerts.push(['warn', 'shield', `${db.meta.ultimoBackup ? 'Último backup em ' + fdate(db.meta.ultimoBackup) : 'Você ainda não fez backup'}. <a href="#backup">Fazer agora</a>`]);
   const naoPub = (db.galeria || []).filter(f => f.status === 'nova').length;
   if (naoPub) alerts.push(['info', 'instagram', `${naoPub} foto(s) na galeria esperando publicação. <a href="#galeria">Ver galeria</a>`]);
+  if (!oracaoPostada(today())) alerts.push(['info', 'pray', `Oração de hoje: <b>${esc(oracaoDoDia(today()).t)}</b> — ainda não postada. <a href="#oracoes">Criar o post</a>`]);
   for (const p of produtosOrd()) {
     const e = estoqueProduto(p.id);
     if (e < 0) alerts.push(['bad', 'sparkles', `<b>${esc(p.nome)}</b>: faltam ${fmt(-e)} para entregar — produzir.`]);
