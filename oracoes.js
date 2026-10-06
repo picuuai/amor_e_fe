@@ -37,12 +37,13 @@ const ORACOES = [
   { id: 'confio', t: 'Jesus, eu confio em vós', x: 'Jesus, eu confio em vós.\nNas horas de alegria e nas de aflição,\nquando entendo e quando não entendo,\nquando tenho forças e quando me faltam,\nJesus, eu confio em vós.\nAmém.' },
 ];
 
-const OR_ESTILOS = { celestial: ['Celestial', '#1f3266'], aurora: ['Aurora', 'linear-gradient(135deg,#f6b26b,#c9698f)'], pergaminho: ['Pergaminho', '#efe2c4'], luz: ['Luz', '#4b2fb0'] };
+const OR_ESTILOS = { pintura: ['Arte sacra', 'linear-gradient(135deg,#7a4a1e,#1f3266)'], celestial: ['Celestial', '#1f3266'], aurora: ['Aurora', 'linear-gradient(135deg,#f6b26b,#c9698f)'], pergaminho: ['Pergaminho', '#efe2c4'], luz: ['Luz', '#4b2fb0'] };
 const OR_FORMATOS = { retrato: [1080, 1350, 'Feed 4:5'], story: [1080, 1920, 'Reels / Stories'], quadrado: [1080, 1080, 'Quadrado'] };
 const OR_CORES = {
   celestial: { bg: ['#070f26', '#1d2f5e'], marca: '#e8c875', titulo: '#f3d98f', texto: '#eef1fb', rodape: '#b9c3e3', brilho: '241,211,138' },
   aurora: { bg: ['#2b2350', '#b85a84', '#f3b06a'], marca: '#fff1d2', titulo: '#ffffff', texto: '#fff8ee', rodape: '#ffe9cf', brilho: '255,236,190' },
   pergaminho: { bg: ['#f6ecd4', '#e7d5ae'], marca: '#9a6a14', titulo: '#5a3a12', texto: '#3b2a17', rodape: '#7a5a2c', brilho: '168,118,15' },
+  pintura: { bg: ['#0b0d1f', '#1a1630'], marca: '#f0d28a', titulo: '#fbe7b0', texto: '#ffffff', rodape: '#e6e0f5', brilho: '255,236,190' },
   luz: { bg: ['#1c1140', '#4b2fb0'], marca: '#e8c875', titulo: '#ffffff', texto: '#f1edff', rodape: '#cdc2f5', brilho: '255,255,255' },
 };
 // acordes em notas MIDI; cada trilha combina um "colchão" de notas longas com sinos, harpa ou coro
@@ -54,11 +55,82 @@ const OR_TRILHAS = {
   nenhuma: { nome: 'Sem música' },
 };
 const OR_DURACOES = [15, 20, 30, 45];
+// Pinturas sacras em domínio público (Wikimedia Commons), usadas como arte de fundo no visual "Arte sacra".
+// u = caminho do arquivo no Commons; foco = ponto da pintura que deve ficar à vista quando ela é cortada (0 a 1).
+const ARTE_BASE = 'https://upload.wikimedia.org/wikipedia/commons/';
+const ARTES = {
+  virgem: { t: 'A Virgem em oração', a: 'Sassoferrato', u: 'thumb/4/48/Sassoferrato_-_Jungfrun_i_b%C3%B6n.jpg/1280px-Sassoferrato_-_Jungfrun_i_b%C3%B6n.jpg', foco: [0.5, 0.35] },
+  imaculada: { t: 'Imaculada Conceição', a: 'Murillo', u: 'thumb/6/61/Murillo_immaculate_conception.jpg/1280px-Murillo_immaculate_conception.jpg', foco: [0.5, 0.3] },
+  anunciacao: { t: 'A Anunciação', a: 'Fra Angelico', u: 'thumb/f/fb/La_Anunciaci%C3%B3n_%28Fra_Angelico-Prado%29.jpg/1280px-La_Anunciaci%C3%B3n_%28Fra_Angelico-Prado%29.jpg', foco: [0.62, 0.5] },
+  lirios: { t: 'A Virgem dos Lírios', a: 'Bouguereau', u: '1/17/La_Vierge_au_lys.jpg', foco: [0.5, 0.3] },
+  sermao: { t: 'O Sermão da Montanha', a: 'Carl Bloch', u: 'thumb/9/96/Bloch-SermonOnTheMount.jpg/1280px-Bloch-SermonOnTheMount.jpg', foco: [0.5, 0.35] },
+  getsemani: { t: 'Cristo no Getsêmani', a: 'Heinrich Hofmann', u: '6/68/Christ_in_Gethsemane.jpg', foco: [0.45, 0.4] },
+  coracao: { t: 'Sagrado Coração de Jesus', a: 'Pompeo Batoni', u: 'thumb/6/6f/Sacred_Heart_of_Jesus%2C_Gesu_Church%2C_Rome.jpg/1280px-Sacred_Heart_of_Jesus%2C_Gesu_Church%2C_Rome.jpg', foco: [0.5, 0.35] },
+  cruz: { t: 'Cristo crucificado', a: 'Velázquez', u: 'thumb/d/d7/Cristo_crucificado.jpg/1280px-Cristo_crucificado.jpg', foco: [0.5, 0.3] },
+  miguel: { t: 'São Miguel Arcanjo', a: 'Guido Reni', u: 'thumb/7/7a/GuidoReni_MichaelDefeatsSatan.jpg/1280px-GuidoReni_MichaelDefeatsSatan.jpg', foco: [0.5, 0.3] },
+  anjo: { t: 'O Anjo da Guarda', a: 'Pietro da Cortona', u: 'a/aa/Cortona_Guardian_Angel_01.jpg', foco: [0.5, 0.35] },
+  franciscoAves: { t: 'São Francisco pregando aos pássaros', a: 'J. A. Ramboux, a partir de Giotto', u: 'thumb/e/e5/Johann_Anton_Ramboux_-_Saint_Francis_Preaching_to_the_Birds_-_Google_Art_Project.jpg/1280px-Johann_Anton_Ramboux_-_Saint_Francis_Preaching_to_the_Birds_-_Google_Art_Project.jpg', foco: [0.5, 0.45] },
+  francisco: { t: 'São Francisco em oração', a: 'Zurbarán e ateliê', u: 'thumb/1/1d/Zurbar%C3%A1n_and_Studio_-_Saint_Francis_of_Assisi_in_Prayer%2C_Delenda_A-7.jpg/1280px-Zurbar%C3%A1n_and_Studio_-_Saint_Francis_of_Assisi_in_Prayer%2C_Delenda_A-7.jpg', foco: [0.5, 0.35] },
+  jose: { t: 'São José com o Menino Jesus', a: 'Guido Reni', u: 'thumb/2/2c/Guido_Reni_-_Saint_Joseph_and_the_Christ_Child_-_Google_Art_Project.jpg/1280px-Guido_Reni_-_Saint_Joseph_and_the_Christ_Child_-_Google_Art_Project.jpg', foco: [0.5, 0.35] },
+  pentecostes: { t: 'Pentecostes', a: 'El Greco', u: 'thumb/d/d3/Pentecost%C3%A9s_%28El_Greco%2C_c._1600%29_Prado.jpg/1280px-Pentecost%C3%A9s_%28El_Greco%2C_c._1600%29_Prado.jpg', foco: [0.5, 0.3] },
+  davi: { t: 'O Rei Davi tocando harpa', a: 'Gerard van Honthorst', u: 'thumb/b/b6/Gerard_van_Honthorst_-_King_David_Playing_the_Harp_-_Google_Art_Project.jpg/1280px-Gerard_van_Honthorst_-_King_David_Playing_the_Harp_-_Google_Art_Project.jpg', foco: [0.5, 0.35] },
+  sol: { t: 'Mulher diante do sol', a: 'Caspar David Friedrich', u: 'thumb/7/7e/Caspar_David_Friedrich_-_Frau_vor_untergehender_Sonne.jpg/1280px-Caspar_David_Friedrich_-_Frau_vor_untergehender_Sonne.jpg', foco: [0.5, 0.5] },
+  trindades: { t: 'As duas Trindades', a: 'Murillo', u: 'thumb/b/b2/Bartolom%C3%A9_Esteban_Murillo_-_The_Heavenly_and_Earthly_Trinities_-_1681-82.jpg/1280px-Bartolom%C3%A9_Esteban_Murillo_-_The_Heavenly_and_Earthly_Trinities_-_1681-82.jpg', foco: [0.5, 0.45] },
+  pastor: { t: 'O Bom Pastor', a: 'Bernhard Plockhorst', u: 'a/a7/Bernhard_Plockhorst_-_Good_Shephard.jpg', foco: [0.5, 0.3] },
+  angelus: { t: 'O Angelus', a: 'Jean-François Millet', u: 'thumb/d/d7/Jean-Fran%C3%A7ois_Millet_%28II%29_001.jpg/1280px-Jean-Fran%C3%A7ois_Millet_%28II%29_001.jpg', foco: [0.5, 0.5] },
+  familia: { t: 'A Sagrada Família do passarinho', a: 'Murillo', u: 'thumb/6/69/Sagrada_Familia_del_pajarito_%28Murillo%29.jpg/1280px-Sagrada_Familia_del_pajarito_%28Murillo%29.jpg', foco: [0.5, 0.45] },
+};
+// qual pintura combina com cada oração do app; as demais (e os salmos) usam o rodízio "geral" pela data
+const ARTE_DA_ORACAO = {
+  'pai-nosso': 'sermao', 'ave-maria': 'virgem', 'santo-anjo': 'anjo', 'sao-francisco': 'franciscoAves', manha: 'sol', 'salve-rainha': 'imaculada',
+  'espirito-santo': 'pentecostes', gloria: 'trindades', 'lembrai-vos': 'lirios', 'alma-de-cristo': 'cruz', 'sao-miguel': 'miguel', 'vossa-protecao': 'virgem',
+  noite: 'angelus', contricao: 'getsemani', fatima: 'coracao', consagracao: 'imaculada', 'so-deus-basta': 'francisco', bencao: 'sermao', serenidade: 'getsemani',
+  'sao-jose': 'jose', familia: 'familia', gratidao: 'angelus', angelus: 'anunciacao', 'coracao-de-jesus': 'coracao', enfermos: 'pastor', aparecida: 'imaculada',
+  'fe-esperanca': 'trindades', trabalho: 'angelus', paz: 'franciscoAves', 'bom-pastor': 'pastor', confio: 'coracao',
+};
+const ARTE_GERAL = ['davi', 'pastor', 'sermao', 'angelus', 'sol', 'virgem', 'getsemani', 'coracao', 'trindades', 'francisco'];
+const arteAtual = () => {
+  if (ARTES[orac.arte]) return orac.arte;                                           // escolhida à mão
+  const o = oracaoAtual();
+  if (o.fonte === 'salmo' && /^Salmo 23\b/.test(o.t)) return 'pastor';
+  const n = daysBetween('2026-01-01', orac.data || today());
+  return ARTE_DA_ORACAO[o.id] || ARTE_GERAL[((n % ARTE_GERAL.length) + ARTE_GERAL.length) % ARTE_GERAL.length];
+};
+// carrega a pintura (uma vez) e redesenha quando chegar; sem internet, o cartão fica só com o fundo escuro
+const _arteImg = {};
+function arteImagem(id) {
+  const c = _arteImg[id] ||= { img: null, estado: 'nova' };
+  if (c.estado === 'nova') {
+    c.estado = 'carregando';
+    const im = new Image(); im.crossOrigin = 'anonymous';   // sem isso o navegador não deixa exportar a imagem/vídeo
+    im.onload = () => { c.img = im; c.estado = 'ok'; const cv = $('#orCanvas'); if (cv && !orac._anim) drawOracao(cv); };
+    im.onerror = () => { c.estado = 'erro'; const el = $('#orArteMsg'); if (el) el.textContent = 'Não consegui baixar a pintura (sem internet?). O cartão fica com o fundo escuro.'; };
+    im.src = ARTE_BASE + ARTES[id].u;
+  }
+  return c.img;
+}
+function orPintura(g, W, H, t, parado) {
+  const id = arteAtual(), a = ARTES[id], img = arteImagem(id);
+  if (!img) return;
+  // cobre o quadro inteiro, mantendo o "foco" à vista; no vídeo a pintura aproxima bem devagar
+  const zoom = parado ? 1.04 : 1 + 0.09 * Math.min(1, t / (orac._durAnim || 20));
+  const k = Math.max(W / img.width, H / img.height) * zoom, w = img.width * k, h = img.height * k;
+  const x = Math.min(0, Math.max(W - w, W / 2 - a.foco[0] * w)), y = Math.min(0, Math.max(H - h, H * 0.4 - a.foco[1] * h));
+  g.drawImage(img, x, y, w, h);
+  // véu escuro para o texto ficar legível: no vídeo a pintura aparece limpa e escurece quando a oração entra
+  const veu = parado ? 0.6 : 0.12 + 0.5 * Math.min(1, Math.max(0, (t - 0.8) / 1.6));
+  g.fillStyle = `rgba(9,10,26,${veu})`; g.fillRect(0, 0, W, H);
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, 'rgba(9,10,26,.35)'); gr.addColorStop(0.3, 'rgba(9,10,26,0)'); gr.addColorStop(0.75, 'rgba(9,10,26,.15)'); gr.addColorStop(1, 'rgba(9,10,26,.75)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const u = W / 1080, m = 34 * u;
+  g.strokeStyle = OR_CORES.pintura.marca; g.globalAlpha = 0.7; g.lineWidth = 2.5 * u; g.beginPath(); g.roundRect(m, m, W - 2 * m, H - 2 * m, 22 * u); g.stroke(); g.globalAlpha = 1;
+}
 // voz que lê a oração no vídeo: as "automáticas" são vozes do Windows geradas pelo postador (só no computador)
-const OR_VOZES = { nenhuma: { nome: 'Sem voz' }, Maria: { nome: 'Maria (automática)' }, Daniel: { nome: 'Daniel (automática)' }, minha: { nome: 'Minha voz' } };
+const OR_VOZES = { nenhuma: { nome: 'Sem voz' }, Piper: { nome: 'Voz natural' }, Maria: { nome: 'Maria (Windows)' }, Daniel: { nome: 'Daniel (Windows)' }, minha: { nome: 'Minha voz' } };
+const orVozAuto = v => v === 'Piper' || v === 'Maria' || v === 'Daniel';   // geradas pelo postador, só no computador
 
 const orac = { data: null, id: null, estilo: null, formato: null, trilha: null, dur: null, legenda: '', legendaEditada: false, _lay: null, _layKey: '', _bg: null, _bgKey: '', _anim: null };
-const orCfg = () => { const c = (db.params.oracao ||= { estilo: 'celestial', formato: 'retrato', trilha: 'serena', dur: 20, mostrarData: true }); if (!c.fonteV2) { c.fonte = 'salmo'; c.fonteV2 = 1; } return c; };
+const orCfg = () => { const c = (db.params.oracao ||= { estilo: 'celestial', formato: 'retrato', trilha: 'serena', dur: 20, mostrarData: true }); if (!c.fonteV2) { c.fonte = 'salmo'; c.fonteV2 = 1; } if (!c.arteV1) { c.estilo = 'pintura'; c.arteV1 = 1; } return c; };
 const oracoesRodizio = () => [...ORACOES, ...(db.oracoes || [])];
 const oracoesTodas = () => [...oracoesRodizio(), ...(db.oracoesRss || [])];
 // oração do dia: a que veio do site (RSS) para aquela data; se não houver, a do rodízio do app
@@ -254,7 +326,8 @@ function drawOracao(cv, t = null) {
   const parado = t == null, tt = parado ? 7.3 : t;
   const fade = (ini, d = 1) => parado ? 1 : Math.min(1, Math.max(0, (tt - ini) / d));
   g.globalAlpha = 1; g.drawImage(orFundo(W, H), 0, 0);
-  orParticulas(g, W, H, tt);
+  if (orac.estilo === 'pintura') orPintura(g, W, H, tt, parado); else orParticulas(g, W, H, tt);
+  if (orac.estilo === 'pintura') { g.shadowColor = 'rgba(0,0,0,.75)'; g.shadowBlur = 14 * u; }   // texto com sombra sobre a pintura
   let y = L.y0;
   g.globalAlpha = fade(0.2, 1.2);
   orCruz(g, W / 2, y + 28 * u, 56 * u, cor.marca); y += 62 * u;
@@ -282,6 +355,11 @@ function drawOracao(cv, t = null) {
   y += L.corpo;
   g.globalAlpha = fade(vz ? vz.ini + vz.dur : 1.4 + janela, 1);
   if (o.a) { g.fillStyle = cor.marca; font(g, 500, 27 * u, 'Playfair Display', 'italic'); g.fillText('— ' + o.a, W / 2, y + 16 * u); }
+  g.shadowBlur = 0;
+  if (orac.estilo === 'pintura' && _arteImg[arteAtual()]?.img) {   // crédito da obra, discreto, no canto de baixo
+    const a = ARTES[arteAtual()]; g.fillStyle = cor.rodape; g.globalAlpha = (parado ? 1 : fade(0.3, 1)) * 0.8; font(g, 500, 17 * u, 'Playfair Display', 'italic');
+    g.fillText(`${a.t} — ${a.a}`, W / 2, L.base + 4 * u); g.globalAlpha = fade(vz ? vz.ini + vz.dur : 1.4 + janela, 1);
+  }
   const ig = divCfg().instagram.trim();
   if (ig) { g.fillStyle = cor.rodape; font(g, 600, 24 * u); g.globalAlpha *= 0.95; g.fillText(ig.startsWith('@') ? ig : '@' + ig, W / 2, L.base - 34 * u); }
   g.globalAlpha = 1;
@@ -370,7 +448,7 @@ async function orPrepararVoz() {
   } catch { throw new Error('a voz automática precisa do postador ligado neste computador. No celular, use “Minha voz”.'); }
   if (!j.ok) throw new Error(j.erro || 'o postador não gerou a voz.');
   const buffer = await orDecodAudio(await (await fetch(j.audio)).arrayBuffer());
-  orac._vozAuto = { chave, buffer };
+  orac._vozAuto = { chave, buffer, tempos: Array.isArray(j.tempos) ? j.tempos.slice(1) : null };   // tempos[0] é o título
   return buffer;
 }
 // grava a voz da pessoa pelo microfone. A tela mostra a oração e acende uma frase de cada vez, num ritmo calmo:
@@ -451,7 +529,7 @@ function orAnimar(cv, gravar, aCada, voz) {
   return new Promise(fim => {
     // com voz, o vídeo dura pelo menos o tempo da leitura mais um respiro no final
     const dur = Math.max(orac.dur, voz ? Math.ceil(voz.duration + 4.5) : 0), a = orac._anim = { fim, raf: 0 };
-    orac._durAnim = dur; orac._vozAnim = voz ? { ini: 1.3, dur: voz.duration, tempos: orac.voz === 'minha' ? orac._minhaVoz?.tempos : null } : null;
+    orac._durAnim = dur; orac._vozAnim = voz ? { ini: 1.3, dur: voz.duration, tempos: orac.voz === 'minha' ? orac._minhaVoz?.tempos : orVozAuto(orac.voz) ? orac._vozAuto?.tempos : null } : null;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (AC && (orac.trilha !== 'nenhuma' || voz)) {
       a.ctx = new AC(); a.ctx.resume?.();
@@ -474,11 +552,14 @@ function orAnimar(cv, gravar, aCada, voz) {
         musica.gain.setValueAtTime(1, a.ctx.currentTime); musica.gain.linearRampToValueAtTime(0.28, t0);
         musica.gain.setValueAtTime(0.28, t0 + voz.duration); musica.gain.linearRampToValueAtTime(1, t0 + voz.duration + 1.5);
       }
-      a.saida.connect(a.ctx.destination);
+      // limitador no final: voz + música nunca estouram (distorção) no vídeo
+      a.final = a.ctx.createDynamicsCompressor(); a.final.threshold.value = -6; a.final.knee.value = 4; a.final.ratio.value = 20; a.final.attack.value = 0.002; a.final.release.value = 0.15;
+      a.saida.gain.value = voz ? 0.8 : 1;
+      a.saida.connect(a.final); a.final.connect(a.ctx.destination);
     }
     if (gravar) {
       const stream = cv.captureStream(30), pedacos = [], mime = orMime();
-      if (a.saida) { const d = a.ctx.createMediaStreamDestination(); a.saida.connect(d); d.stream.getAudioTracks().forEach(t => stream.addTrack(t)); }
+      if (a.saida) { const d = a.ctx.createMediaStreamDestination(); a.final.connect(d); d.stream.getAudioTracks().forEach(t => stream.addTrack(t)); }
       a.rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5e6, audioBitsPerSecond: 160000 });
       a.rec.ondataavailable = e => e.data.size && pedacos.push(e.data);
       a.rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); if (!a.cancelado) fim(new Blob(pedacos, { type: mime.split(';')[0] })); };
@@ -504,7 +585,7 @@ function gerarLegendaOracao() {
   const marca = (c.instagram.trim() || db.params.nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   const salmo = o.fonte === 'salmo';
   return [salmo ? `🙏 Salmo do dia — ${o.t}` : `🙏 Oração do dia — ${o.t}`, '', (o.completo || o.x) + (o.a ? `\n(${o.a})` : ''), '',
-    '✨ Salve para rezar depois e envie para alguém que precisa desta oração hoje.', '📿 Reze com a gente todos os dias.', ...(salmo ? [`(Salmo da liturgia do dia — ${SALMO_NOME}, evangelizo.org)`] : o.rss ? [`(Oração traduzida de ${RSS_NOME})`] : []), '',
+    '✨ Salve para rezar depois e envie para alguém que precisa desta oração hoje.', '📿 Reze com a gente todos os dias.', ...(orac.estilo === 'pintura' ? [`🎨 Pintura: ${ARTES[arteAtual()].t}, de ${ARTES[arteAtual()].a}`] : []), ...(salmo ? [`(Salmo da liturgia do dia — ${SALMO_NOME}, evangelizo.org)`] : o.rss ? [`(Oração traduzida de ${RSS_NOME})`] : []), '',
     ['#oração', '#oraçãododia', '#fé', '#católico', '#igrejacatólica', '#terço', '#nossasenhora', '#deus', '#amém', '#gratidão', marca && '#' + marca].filter(Boolean).join(' ')].join('\n');
 }
 
@@ -553,6 +634,8 @@ function viewOracoes() {
       <div class="card c-modelo"><div class="card-h">${ic('sparkles')}<h3>2. Visual</h3></div>
         ${chips('estilo', OR_ESTILOS, true)}
         ${chips('formato', OR_FORMATOS, false)}
+        ${s.estilo === 'pintura' ? `<label>Pintura de fundo<select name="arte"><option value="">Automática — ${esc(ARTES[(() => { const g = s.arte; s.arte = ''; const id = arteAtual(); s.arte = g; return id; })()].t)}</option>${Object.entries(ARTES).map(([id, a]) => `<option value="${id}" ${s.arte === id ? 'selected' : ''}>${esc(a.t)} — ${esc(a.a)}</option>`).join('')}</select></label>
+        <p class="hint" id="orArteMsg" style="margin:-6px 0 12px">Pinturas clássicas em domínio público (Wikimedia Commons). O app escolhe uma que combina com a oração; você pode trocar.</p>` : ''}
         <label class="chk"><input type="checkbox" name="mostrarData" ${c.mostrarData ? 'checked' : ''}>Mostrar a data no cartão</label>
       </div>
       <div class="card"><div class="card-h">${ic('music')}<h3>3. Música e voz do vídeo</h3><button type="button" class="btn sm" data-o="ouvir">${ic('play')}Ouvir prévia</button></div>
@@ -562,8 +645,8 @@ function viewOracoes() {
         ${s.voz === 'minha' ? `<div class="or-dia" style="margin:-4px 0 12px"><span id="orVozMsg" class="hint" style="flex:1;margin:0"></span><button type="button" class="btn sm" data-o="gravarVoz"></button></div>` : ''}
         ${s.voz === 'minha' ? `<label>Velocidade do texto na gravação<select name="leitorRitmo">${[['devagar', 'Devagar'], ['normal', 'Normal'], ['rapido', 'Rápido']].map(([v, l]) => `<option value="${v}" ${v === (c.leitorRitmo || 'normal') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <p class="hint" style="margin:-6px 0 12px">Na gravação, cada frase acende na hora de ser lida. No vídeo, a letra aparece nesses mesmos instantes, junto com a sua voz.</p>` : ''}
-        ${s.voz === 'Maria' || s.voz === 'Daniel' ? `<label>Ritmo da leitura<select name="vozRitmo">${[[-16, 'Calmo, de oração'], [-6, 'Natural'], [2, 'Mais rápido']].map(([v, l]) => `<option value="${v}" ${v === (c.vozRitmo ?? -16) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <p class="hint" style="margin:-6px 0 12px">Voz do Windows, gerada neste computador pelo postador. O vídeo se estica sozinho se a leitura passar da duração escolhida.</p>` : ''}
+        ${orVozAuto(s.voz) ? `<label>Ritmo da leitura<select name="vozRitmo">${[[-16, 'Calmo, de oração'], [-6, 'Natural'], [2, 'Mais rápido']].map(([v, l]) => `<option value="${v}" ${v === (c.vozRitmo ?? -16) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <p class="hint" style="margin:-6px 0 12px">${s.voz === 'Piper' ? 'Voz natural (Piper), gerada neste computador pelo postador, sem internet; a letra aparece junto com a fala.' : 'Voz do Windows, gerada neste computador pelo postador.'} O vídeo se estica sozinho se a leitura passar da duração escolhida.</p>` : ''}
         <label>Duração do vídeo<select name="dur">${OR_DURACOES.map(d => `<option value="${d}" ${d === s.dur ? 'selected' : ''}>${d} segundos</option>`).join('')}</select></label>
         <p class="hint" style="margin:-6px 0 0">A música é criada pelo próprio app (instrumental suave), então pode postar sem risco de bloqueio por direito autoral.
         ${video ? (mp4 ? '' : ' Este navegador grava em .webm, que o Instagram não aceita — use o Chrome ou o Edge atualizados para sair em .mp4.') : ' Este navegador não grava vídeo — use o Chrome ou o Edge.'}</p>
@@ -598,11 +681,11 @@ function initOracoes() {
   const s = orac, c = orCfg(), cv = $('#orCanvas', root);
   const redraw = () => { if (!s._anim) { drawOracao(cv); fitCanvas(cv); } };
   const setLeg = () => { if (!s.legendaEditada) s.legenda = gerarLegendaOracao(); root.querySelector('[name=legenda]').value = s.legenda; };
-  const trocaDia = d => { orParar(); s.data = d; s.id = oracaoDoDia(d).id; s.legendaEditada = false; render(); };
+  const trocaDia = d => { orParar(); s.arte = ''; s.data = d; s.id = oracaoDoDia(d).id; s.legendaEditada = false; render(); };
   const prog = p => { const el = $('#orProg'); if (el) { el.hidden = p == null; el.firstElementChild.style.width = (p || 0) * 100 + '%'; } };
   // busca a voz escolhida; devolve false (e explica) se não der para continuar
   const pegarVoz = async b => {
-    if (s.voz === 'Maria' || s.voz === 'Daniel') setPub(`${ic('refresh')}<div>Gerando a voz…</div>`);
+    if (orVozAuto(s.voz)) setPub(`${ic('refresh')}<div>Gerando a voz…</div>`);
     b.disabled = true;
     try { const v = await orPrepararVoz(); setPub(''); return v; }
     catch (e) { setPub(`${ic('alert')}<div>Voz: ${esc(e.message)}</div>`, 'warn'); return false; }
@@ -618,11 +701,12 @@ function initOracoes() {
   root.addEventListener('input', e => { if (e.target.name === 'legenda') { s.legenda = e.target.value; s.legendaEditada = true; } });
   root.addEventListener('change', e => {
     const t = e.target, n = t.name;
-    if (n === 'oracao') { orParar(); s.id = t.value; s._auto = false; s.legendaEditada = false; render(); return; }
+    if (n === 'oracao') { orParar(); s.arte = ''; s.id = t.value; s._auto = false; s.legendaEditada = false; render(); return; }
     if (n === 'fonte') { orParar(); c.fonte = t.value; s.id = null; s._rssMsg = ''; s.legendaEditada = false; save(); render(); return; }
     if (n === 'leitorRitmo') c.leitorRitmo = t.value;
     if (n === 'vozRitmo') { orParar(); botaoOuvir(); c.vozRitmo = +t.value; }
     if (n === 'dur') { orParar(); botaoOuvir(); s.dur = c.dur = +t.value; }
+    if (n === 'arte') { orParar(); botaoOuvir(); s.arte = t.value; s._video = null; setPub(''); setLeg(); redraw(); return; }
     if (n === 'mostrarData') { c.mostrarData = t.checked; redraw(); }
     save();
   });
@@ -634,7 +718,7 @@ function initOracoes() {
       s[k] = c[k] = chip.dataset.v;
       $$(`.chip[data-k="${k}"]`, root).forEach(b => b.classList.toggle('on', b === chip));
       save();
-      if (k === 'voz') { render(); return; }   // mostra ou esconde o gravador
+      if (k === 'voz' || k === 'estilo') { render(); return; }   // mostra ou esconde o gravador / a escolha da pintura
       redraw(); return;
     }
     const b = e.target.closest('[data-o]'); if (!b) return;
