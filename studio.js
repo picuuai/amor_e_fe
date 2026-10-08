@@ -474,7 +474,7 @@ function viewDivulgar() {
       <div class="card"><div class="card-h">${ic('tag')}<h3>3. Textos</h3></div>
         <label>Título<input name="titulo" value="${esc(s.titulo)}"></label>
         <label>Frase<input name="frase" value="${esc(c.frase)}"></label>
-        <div class="g2"><label>Preço<input name="preco" inputmode="decimal" value="${iv(s.preco)}"></label>
+        <div class="g2"><label>Preço<input name="preco" class="money" inputmode="numeric" value="${mv(s.preco)}"></label>
         <label>Selo<select name="selo">${SELOS.map(x => `<option value="${esc(x)}" ${x === s.selo ? 'selected' : ''}>${x || 'Sem selo'}</option>`).join('')}</select></label></div>
         <label class="chk"><input type="checkbox" name="mostrarPreco" ${s.mostrarPreco ? 'checked' : ''}>Mostrar preço na imagem</label>
         <label>Chamada<input name="cta" value="${esc(c.cta)}"></label>
@@ -514,7 +514,7 @@ async function initStudio() {
     if (n === 'prod') {
       s.prodId = t.value; const p = get('produtos', s.prodId);
       s.titulo = p.nome; s.preco = p.preco; s._tituloDe = p.id; s.legendaEditada = false;
-      root.querySelector('[name=titulo]').value = s.titulo; root.querySelector('[name=preco]').value = iv(s.preco);
+      root.querySelector('[name=titulo]').value = s.titulo; root.querySelector('[name=preco]').value = mv(s.preco);
       // a foto escolhida na Galeria continua; ela passa a ficar registrada com este terço
       const foto = galeria().find(f => f.id === s.fotoId);
       if (foto) foto.produtoId = p.id;

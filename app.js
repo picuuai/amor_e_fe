@@ -20,6 +20,10 @@ const pn = s => {
   return isNaN(n) ? 0 : n;
 };
 const iv = n => (n === '' || n == null) ? '' : String(rnd(+n)).replace('.', ',');
+// valor de um campo de dinheiro (class="money"): sempre com centavos, "1.234,50"
+const mv = n => (n === '' || n == null) ? '' : (+n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// custo por unidade: materiais baratos (conta, miçanga) custam frações de centavo
+const brlU = n => (+n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: Math.abs(+n || 0) < 1 ? 4 : 2 });
 const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 const fdate = s => s ? s.split('-').reverse().join('/') : '';
 const monthLabel = ym => { const s = new Date(ym + '-15T12:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); return s[0].toUpperCase() + s.slice(1); };
@@ -247,7 +251,8 @@ function toast(msg) {
 const dlg = $('#dlg');
 function modal({ title, body, onSave, onDelete, saveLabel = 'Salvar', onOpen }) {
   $('#dlgTitle').textContent = title;
-  $('#dlgBody').innerHTML = body;
+  // corpo novo a cada abertura: os eventos que o formulário anterior ligou (onOpen) não podem agir neste
+  $('#dlgBody').replaceWith(Object.assign($('#dlgBody').cloneNode(false), { innerHTML: body }));
   $('#dlgDel').hidden = !onDelete;
   $('#dlgSave').hidden = !onSave;
   $('#dlgSave').textContent = saveLabel;
@@ -266,6 +271,19 @@ $('#dlgDel').onclick = () => {
 };
 $('#dlgCancel').onclick = $('#dlgX').onclick = () => dlg.close();
 const F = (root, name) => root.querySelector(`[name="${name}"]`)?.value ?? '';
+
+// campos de dinheiro: é só digitar os números, a vírgula dos centavos entra sozinha (420 → 4,20).
+// Na captura, para o valor já estar formatado quando o formulário recalcula.
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (!el.classList?.contains('money')) return;
+  const d = el.value.replace(/\D/g, '').slice(0, 11);
+  el.value = d ? mv(parseInt(d, 10) / 100) : '';
+}, true);
+// ao tocar em um campo numérico, o valor fica selecionado: digitar já substitui
+document.addEventListener('focusin', e => {
+  if (e.target.matches?.('input[inputmode=decimal],input[inputmode=numeric]')) e.target.select();
+});
 
 const opts = (arr, sel, label = x => x.nome, val = x => x.id) =>
   arr.map(x => `<option value="${esc(val(x))}" ${val(x) === sel ? 'selected' : ''}>${esc(label(x))}</option>`).join('');
@@ -312,6 +330,7 @@ function render() {
     if (dlg.open) dlg.close();
     document.title = 'Controle de Terços';
     $('#view').innerHTML = Sync.lockView();
+    $('#fab').hidden = true;
     return;
   }
   const r = location.hash.slice(1) || 'inicio';
@@ -327,6 +346,7 @@ function render() {
   $('#bkBadge').className = 'sync ' + (late ? 'login' : 'ok');
   $('#bkBadge').innerHTML = late ? `${ic('shield')}<span>Fazer backup</span>` : `${ic('shield')}<span>Backup em dia</span>`;
   $('#topAct').innerHTML = '';
+  $('#fab').hidden = ['divulgar', 'oracoes', 'galeria', 'instagram', 'sync'].includes(r); // telas com barra própria embaixo
   $('#view').innerHTML = fn();
   if (r === 'divulgar') initStudio();
   if (r === 'galeria') initGaleria();
@@ -388,7 +408,7 @@ function viewInicio() {
   for (const i of insumosOrd()) {
     const e = estoqueInsumo(i.id);
     if (e < 0) alerts.push(['bad', 'alert', `<b>${esc(i.nome)}</b>: estoque negativo (${fmt(e)} ${esc(i.unidade)}) — confira as compras.`]);
-    else if (i.estoqueMin > 0 && e <= i.estoqueMin) alerts.push(['warn', 'cart', `<b>${esc(i.nome)}</b>: restam ${fmt(e)} ${esc(i.unidade)} — comprar.`]);
+    else if (i.estoqueMin > 0 && e <= i.estoqueMin) alerts.push(['warn', 'cart', `<b>${esc(i.nome)}</b>: restam ${fmt(e)} ${esc(i.unidade)}. <a href="#compras" data-act="novaCompra" data-id="${i.id}">Registrar compra</a>`]);
   }
 
   const enc = vendasAtivas().filter(v => v.entrega === 'A entregar').sort((a, b) => (a.dataEntrega || '9').localeCompare(b.dataEntrega || '9'));
@@ -474,7 +494,7 @@ function itemRow(it = {}) {
   return `<div class="row item">
     <select name="produtoId" aria-label="Produto"><option value="">Produto…</option>${opts(produtosOrd(), it.produtoId)}</select>
     <input name="qtd" inputmode="decimal" placeholder="Qtd" aria-label="Quantidade" value="${iv(it.qtd ?? 1)}">
-    <input name="preco" inputmode="decimal" placeholder="Preço" aria-label="Preço" value="${iv(it.preco ?? '')}">
+    <input name="preco" class="money" inputmode="numeric" placeholder="Preço" aria-label="Preço" value="${mv(it.preco ?? '')}">
     <button type="button" class="rm" data-f="rm" aria-label="Remover">${ic('trash')}</button></div>`;
 }
 function formVenda(v) {
@@ -495,7 +515,7 @@ function formVenda(v) {
       <div class="sec">Itens da venda</div>
       <div class="rows" id="itens">${v.itens.map(itemRow).join('')}</div>
       <div class="g3" style="margin-top:14px">
-        <label>Desconto (R$)<input name="desconto" inputmode="decimal" value="${iv(v.desconto)}"></label>
+        <label>Desconto (R$)<input name="desconto" class="money" inputmode="numeric" value="${mv(v.desconto)}"></label>
         <label>Forma de pagamento<select name="pagamento">${pagOpts.map(p => `<option ${p === v.pagamento ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
         <label>Pagamento<select name="status">${['Pago', 'Pendente', 'Cancelada'].map(s => `<option ${s === v.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
         <label>Entrega<select name="entrega">${['Entregue', 'A entregar'].map(s => `<option ${s === v.entrega ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
@@ -519,7 +539,7 @@ function formVenda(v) {
       root.addEventListener('change', e => {
         if (e.target.name === 'produtoId') {
           const p = get('produtos', e.target.value);
-          if (p) e.target.closest('.item').querySelector('[name=preco]').value = iv(p.preco);
+          if (p) e.target.closest('.item').querySelector('[name=preco]').value = mv(p.preco);
         }
         upd();
       });
@@ -654,8 +674,8 @@ function viewEstoque() {
       <div class="bar" style="margin:8px 0 0;gap:6px"><button class="btn sm" data-act="ajuste" data-id="produto:${p.id}">${ic('sliders')}Ajustar</button><button class="btn sm" data-act="divulgar" data-id="${p.id}">${ic('instagram')}Divulgar</button></div></div></div>`;
   }).join('')}</div>
   <div class="card"><div class="card-h">${ic('layers')}<h3>Insumos</h3><a class="btn sm" href="#compras">${ic('cart')}Compras</a></div><div class="tw"><table>
-    <thead><tr><th>Material</th><th class="n">Em estoque</th><th class="n">Mínimo</th><th class="n">Custo un.</th><th class="n">Valor</th><th></th><th></th></tr></thead><tbody>
-    ${ins.map(i => { const e = estoqueInsumo(i.id), c = custoInsumo(i.id); return `<tr><td><b>${esc(i.nome)}</b></td><td class="n">${fmt(e, 3)} ${esc(i.unidade)}</td><td class="n">${fmt(i.estoqueMin)}</td><td class="n">${brl(c)}</td><td class="n">${brl(Math.max(0, e) * c)}</td><td>${tag(e, i.estoqueMin)}</td><td class="n"><button class="btn sm" data-act="ajuste" data-id="insumo:${i.id}">Ajustar</button></td></tr>`; }).join('')}
+    <thead><tr><th>Material</th><th class="n">Em estoque</th><th class="n hide-sm">Mínimo</th><th class="n hide-sm">Custo un.</th><th class="n hide-sm">Valor</th><th></th><th></th></tr></thead><tbody>
+    ${ins.map(i => { const e = estoqueInsumo(i.id), c = custoInsumo(i.id); return `<tr><td><b>${esc(i.nome)}</b></td><td class="n">${fmt(e, 3)} ${esc(i.unidade)}</td><td class="n hide-sm">${fmt(i.estoqueMin)}</td><td class="n hide-sm">${brlU(c)}</td><td class="n hide-sm">${brl(Math.max(0, e) * c)}</td><td>${tag(e, i.estoqueMin)}</td><td class="n"><button class="btn sm" data-act="ajuste" data-id="insumo:${i.id}">Ajustar</button></td></tr>`; }).join('')}
     </tbody></table></div></div>
   ${db.ajustes.length ? `<div class="card"><div class="card-h">${ic('sliders')}<h3>Ajustes de contagem</h3></div><div class="tw"><table><thead><tr><th>Data</th><th>Item</th><th class="n">Diferença</th><th>Motivo</th></tr></thead><tbody>
     ${[...db.ajustes].reverse().slice(0, 30).map(a => `<tr><td>${fdate(a.data)}</td><td>${esc(a.tipo === 'insumo' ? nomeInsumo(a.refId) : nomeProduto(a.refId))}</td><td class="n ${a.qtd < 0 ? 'neg' : 'pos'}">${a.qtd > 0 ? '+' : ''}${fmt(a.qtd, 3)}</td><td>${esc(a.motivo)}</td></tr>`).join('')}
@@ -736,7 +756,7 @@ function formProduto(p) {
           <label>Código<input name="codigo" value="${esc(p.codigo)}"></label>
           <label>Nome<input name="nome" value="${esc(p.nome)}"></label>
           <label>Tempo (min)<input name="tempoMin" inputmode="decimal" value="${iv(p.tempoMin)}"></label>
-          <label>Preço de venda<input name="preco" inputmode="decimal" value="${iv(p.preco)}"></label>
+          <label>Preço de venda<input name="preco" class="money" inputmode="numeric" value="${mv(p.preco)}"></label>
           <label>Estoque mínimo<input name="estoqueMin" inputmode="decimal" value="${iv(p.estoqueMin)}"></label>
         </div>
       </div>
@@ -777,7 +797,7 @@ function formProduto(p) {
         const f = t.dataset.f;
         if (f === 'add') { $('#ficha', root).insertAdjacentHTML('beforeend', fichaRow()); upd(); }
         if (f === 'rm') { t.closest('.row').remove(); upd(); }
-        if (f === 'usar') { root.querySelector('[name=preco]').value = iv(root._sug); upd(); }
+        if (f === 'usar') { root.querySelector('[name=preco]').value = mv(root._sug); upd(); }
         if (f === 'semFoto') { root._foto = ''; $('#fotoPrev', root).innerHTML = foto({ id: p.id }); }
         if (f === 'divulgar') { dlg.close(); ACTIONS.divulgar(p.id); }
       });
@@ -808,14 +828,17 @@ function viewInsumos() {
     const n = db.compras.filter(c => c.insumoId === i.id).length, e = estoqueInsumo(i.id);
     const low = e < 0 || (i.estoqueMin > 0 && e <= i.estoqueMin);
     return `<button class="li" data-act="editInsumo" data-id="${i.id}"><div class="av ${low ? 't-warn' : 't-gold'}">${ic('layers')}</div><div class="li-main"><div class="li-t">${esc(i.nome)}</div>
-      <div class="li-s">${esc(i.codigo)} · ${esc(i.fornecedor || 'sem fornecedor')} · ${n} compra(s)</div></div>
-      <div class="li-r"><div class="li-v">${brl(custoInsumo(i.id))}<span class="muted" style="font-weight:500">/${esc(i.unidade)}</span></div><span class="tag ${low ? 'warn' : ''}">${fmt(e, 3)} em estoque</span></div></button>`;
+      <div class="li-s">${fatorDe(i) > 1 ? `${esc(embDe(i))} com ${fmt(fatorDe(i), 3)} ${esc(i.unidade)} · ` : ''}${esc(i.fornecedor || 'sem fornecedor')} · ${n} compra(s)</div></div>
+      <div class="li-r"><div class="li-v">${brlU(custoInsumo(i.id))}<span class="muted" style="font-weight:500">/${esc(i.unidade)}</span></div><span class="tag ${low ? 'warn' : ''}">${fmt(e, 3)} ${esc(i.unidade)} em estoque</span></div></button>`;
   }).join('') || empty('layers', 'Nenhum insumo')}</div>
   <p class="hint">O custo é a média de todas as compras daquele material (inclui frete).</p>`;
 }
+// como o material é comprado: nome da embalagem e quanto vem em cada uma (fator de conversão para a unidade de uso)
+const embDe = i => i?.embalagem || 'pacote';
+const fatorDe = i => +i?.fator > 0 ? +i.fator : 1;
 function formInsumo(i) {
   const novo = !i;
-  i = i || { codigo: nextCode('insumos', 'INS'), nome: '', unidade: 'un', estoqueMin: 0, fornecedor: '', custoManual: 0 };
+  i = i || { codigo: nextCode('insumos', 'INS'), nome: '', unidade: 'un', estoqueMin: 0, fornecedor: '', custoManual: 0, embalagem: 'pacote', fator: 1 };
   const compras = novo ? [] : db.compras.filter(c => c.insumoId === i.id).sort((a, b) => b.data.localeCompare(a.data));
   modal({
     title: novo ? 'Novo insumo' : i.nome,
@@ -828,16 +851,30 @@ function formInsumo(i) {
         <label>Fornecedor<input name="fornecedor" value="${esc(i.fornecedor)}"></label>
       </div>
       <datalist id="dlUn"><option value="un"><option value="m"><option value="cm"><option value="g"></datalist>
-      ${compras.length ? `<div class="sec">Compras</div><div class="tw"><table><thead><tr><th>Data</th><th class="n">Qtd</th><th class="n">Valor</th><th class="n">Custo un.</th><th>Fornecedor</th></tr></thead><tbody>
-        ${compras.map(c => `<tr><td>${fdate(c.data)}</td><td class="n">${fmt(c.qtd, 3)}</td><td class="n">${brl(+c.valor + +c.frete)}</td><td class="n">${brl((+c.valor + +c.frete) / c.qtd)}</td><td>${esc(c.fornecedor)}</td></tr>`).join('')}
-        </tbody></table></div><div class="sum"><div class="b"><span>Custo médio</span><span>${brl(custoInsumo(i.id))} / ${esc(i.unidade)}</span></div></div>`
-        : `<label>Custo por unidade (enquanto não houver compra registrada)<input name="custoManual" inputmode="decimal" value="${iv(i.custoManual)}"></label>`}`,
+      <div class="sec">Como você compra</div>
+      <div class="g2">
+        <label>Embalagem<input name="embalagem" list="dlEmb" value="${esc(embDe(i))}"></label>
+        <label>Cada embalagem vem com <span id="unEmb"></span><input name="fator" inputmode="decimal" value="${iv(fatorDe(i))}"></label>
+      </div>
+      <datalist id="dlEmb"><option value="pacote"><option value="caixa"><option value="rolo"><option value="cartela"><option value="fio"><option value="unidade"></datalist>
+      <p class="hint">Ex.: pacote com 420 contas → embalagem “pacote”, vem com 420. Na compra você informa só quantos pacotes e o preço de cada um.</p>
+      ${novo ? '' : `<button type="button" class="btn sm" data-f="comprar">${ic('cart')}Registrar compra deste material</button>`}
+      ${compras.length ? `<div class="sec">Compras</div><div class="tw"><table><thead><tr><th>Data</th><th class="n">Qtd</th><th class="n">Valor</th><th class="n">Custo un.</th><th class="hide-sm">Fornecedor</th></tr></thead><tbody>
+        ${compras.map(c => `<tr><td>${fdate(c.data)}</td><td class="n">${fmt(c.qtd, 3)}</td><td class="n">${brl(+c.valor + +c.frete)}</td><td class="n">${brlU((+c.valor + +c.frete) / c.qtd)}</td><td class="hide-sm">${esc(c.fornecedor)}</td></tr>`).join('')}
+        </tbody></table></div><div class="sum"><div class="b"><span>Custo médio</span><span>${brlU(custoInsumo(i.id))} / ${esc(i.unidade)}</span></div></div>`
+        : `<label>Custo por unidade (enquanto não houver compra registrada)<input name="custoManual" inputmode="decimal" placeholder="Ex.: 0,015" value="${iv(i.custoManual)}"></label>`}`,
+    onOpen: root => {
+      const upd = () => { $('#unEmb', root).textContent = `(${F(root, 'unidade').trim() || 'un'})`; };
+      root.addEventListener('input', upd); upd();
+      root.addEventListener('click', e => { if (e.target.closest('[data-f=comprar]')) { dlg.close(); formCompra(null, i.id); } });
+    },
     onSave: root => {
       const nome = F(root, 'nome').trim();
       if (!nome) { toast('Informe a descrição.'); return false; }
       const codigo = F(root, 'codigo').trim();
       if (db.insumos.some(x => x !== i && x.codigo === codigo)) { toast('Já existe um insumo com esse código.'); return false; }
-      const dados = { codigo, nome, unidade: F(root, 'unidade').trim() || 'un', estoqueMin: pn(F(root, 'estoqueMin')), fornecedor: F(root, 'fornecedor').trim() };
+      const dados = { codigo, nome, unidade: F(root, 'unidade').trim() || 'un', estoqueMin: pn(F(root, 'estoqueMin')), fornecedor: F(root, 'fornecedor').trim(),
+        embalagem: F(root, 'embalagem').trim() || 'pacote', fator: pn(F(root, 'fator')) > 0 ? pn(F(root, 'fator')) : 1 };
       if (root.querySelector('[name=custoManual]')) dados.custoManual = pn(F(root, 'custoManual'));
       if (novo) db.insumos.push({ id: uid(), custoManual: 0, ...dados }); else Object.assign(i, dados);
     },
@@ -853,46 +890,72 @@ function formInsumo(i) {
 function viewCompras() {
   topActions(`<button class="btn pri" data-act="novaCompra">${ic('plus')}Nova compra</button>`);
   const cs = [...db.compras].sort((a, b) => b.data.localeCompare(a.data));
-  return `<div class="list">${cs.map(c => {
-    const i = get('insumos', c.insumoId);
+  const mes = today().slice(0, 7), totMes = cs.filter(c => c.data.startsWith(mes)).reduce((s, c) => s + (+c.valor || 0) + (+c.frete || 0), 0);
+  return `${cs.length ? `<div class="bar"><span class="grow"></span><span class="tag">${esc(monthLabel(mes))} · ${brl(totMes)} em compras</span></div>` : ''}
+  <div class="list">${cs.map(c => {
+    const i = get('insumos', c.insumoId), un = i?.unidade || 'un';
+    const conta = c.pacotes && c.fator > 1 ? `${fmt(c.pacotes, 3)} ${esc(embDe(i))} × ${fmt(c.fator, 3)} = ` : '';
     return `<button class="li" data-act="editCompra" data-id="${c.id}"><div class="av t-blue">${ic('cart')}</div><div class="li-main"><div class="li-t">${esc(nomeInsumo(c.insumoId))}</div>
-      <div class="li-s">${fdate(c.data)} · ${fmt(c.qtd, 3)} ${esc(i?.unidade || '')} · ${esc(c.fornecedor || '')}</div></div>
-      <div class="li-r"><div class="li-v">${brl(+c.valor + +c.frete)}</div><div class="li-s">${brl((+c.valor + +c.frete) / c.qtd)}/${esc(i?.unidade || 'un')}</div></div></button>`;
+      <div class="li-s">${fdate(c.data)} · ${conta}${fmt(c.qtd, 3)} ${esc(un)}${c.fornecedor ? ' · ' + esc(c.fornecedor) : ''}</div></div>
+      <div class="li-r"><div class="li-v">${brl(+c.valor + +c.frete)}</div><div class="li-s">${brlU((+c.valor + +c.frete) / c.qtd)}/${esc(un)}</div></div></button>`;
   }).join('') || empty('cart', 'Nenhuma compra registrada')}</div>`;
 }
-function formCompra(c) {
+function formCompra(c, insumoId) {
   const novo = !c;
-  c = c || { data: today(), insumoId: insumosOrd()[0]?.id, qtd: '', valor: '', frete: 0, fornecedor: '' };
+  c = c || { data: today(), insumoId: insumoId || insumosOrd()[0]?.id, valor: '', frete: 0, fornecedor: '' };
+  // compras antigas não tinham embalagem: aparecem como 1 embalagem com tudo dentro
+  const pac0 = novo ? 1 : (c.pacotes || 1);
+  const fator0 = novo ? fatorDe(get('insumos', c.insumoId)) : (c.pacotes ? c.fator : c.qtd);
   modal({
     title: novo ? 'Nova compra de insumo' : 'Compra',
     body: `
       <div class="g2">
         <label>Data<input type="date" name="data" value="${c.data}"></label>
         <label>Material<select name="insumoId">${opts(insumosOrd(), c.insumoId)}</select></label>
-        <label>Quantidade comprada <span id="un"></span><input name="qtd" inputmode="decimal" value="${iv(c.qtd)}"></label>
-        <label>Valor pago (R$)<input name="valor" inputmode="decimal" value="${iv(c.valor)}"></label>
-        <label>Frete / extra (R$)<input name="frete" inputmode="decimal" value="${iv(c.frete)}"></label>
+        <label><span id="lQtd"></span><input name="pacotes" inputmode="decimal" value="${iv(pac0)}"></label>
+        <label><span id="lFator"></span><input name="fator" inputmode="decimal" value="${iv(fator0)}"></label>
+        <label><span id="lPreco"></span><input name="preco" class="money" inputmode="numeric" placeholder="0,00" value="${novo ? '' : mv(c.valor / pac0)}"></label>
+        <label>Total pago (R$)<input name="valor" class="money" inputmode="numeric" placeholder="0,00" value="${mv(c.valor)}"></label>
+        <label>Frete / extra (R$)<input name="frete" class="money" inputmode="numeric" placeholder="0,00" value="${mv(c.frete)}"></label>
         <label>Fornecedor<input name="fornecedor" value="${esc(c.fornecedor)}"></label>
       </div>
-      <div class="alert info">${ic('scale')}<div>Informe a quantidade na unidade de uso. Ex.: pacote com 420 contas por R$ 4,20 → quantidade 420, valor 4,20.</div></div>
       <div class="sum" id="resumo"></div>`,
     onOpen: root => {
+      const el = n => root.querySelector(`[name=${n}]`);
+      // o total é quantidade × preço; se a pessoa digitar o total, o preço de cada é que se ajusta
+      let digitou = novo ? 'preco' : 'valor';
       const upd = e => {
-        const i = get('insumos', F(root, 'insumoId'));
-        $('#un', root).textContent = i ? `(${i.unidade})` : '';
-        if (e?.target?.name === 'insumoId' && i) root.querySelector('[name=fornecedor]').value = i.fornecedor || '';
-        const q = pn(F(root, 'qtd')), v = pn(F(root, 'valor')) + pn(F(root, 'frete'));
-        $('#resumo', root).innerHTML = `<div class="b"><span>Custo por ${esc(i?.unidade || 'un')}</span><span>${q > 0 ? brl(v / q) : '—'}</span></div>
-          <div class="muted"><span>Custo médio atual</span><span>${i ? brl(custoInsumo(i.id)) : '—'}</span></div>`;
+        const n = e?.target?.name, i = get('insumos', F(root, 'insumoId'));
+        const emb = embDe(i), un = i?.unidade || 'un';
+        if (n === 'insumoId' && i) { el('fornecedor').value = i.fornecedor || ''; el('fator').value = iv(fatorDe(i)); }
+        $('#lQtd', root).textContent = `Quantidade (${emb})`;
+        $('#lFator', root).textContent = `Cada ${emb} vem com (${un})`;
+        $('#lPreco', root).textContent = `Preço por ${emb} (R$)`;
+        if (n === 'preco' || n === 'valor') digitou = n;
+        const p = pn(F(root, 'pacotes'));
+        if (n === 'preco' || n === 'valor' || n === 'pacotes') {
+          if (digitou === 'valor') el('preco').value = p > 0 && F(root, 'valor') ? mv(pn(F(root, 'valor')) / p) : '';
+          else el('valor').value = F(root, 'preco') ? mv(p * pn(F(root, 'preco'))) : '';
+        }
+        const q = rnd(p * pn(F(root, 'fator'))), v = pn(F(root, 'valor')) + pn(F(root, 'frete'));
+        $('#resumo', root).innerHTML = `<div><span>Entra no estoque</span><b>${fmt(q, 3)} ${esc(un)}</b></div>
+          <div><span>Total da compra</span><span>${brl(v)}</span></div>
+          <div class="b"><span>Custo por ${esc(un)}</span><span>${q > 0 ? brlU(v / q) : '—'}</span></div>
+          <div class="muted"><span>Custo médio atual</span><span>${i ? brlU(custoInsumo(i.id)) : '—'}</span></div>`;
       };
       root.addEventListener('input', upd); root.addEventListener('change', upd);
-      if (novo) { const i = get('insumos', c.insumoId); if (i) root.querySelector('[name=fornecedor]').value = i.fornecedor || ''; }
+      if (novo) { const i = get('insumos', c.insumoId); if (i) el('fornecedor').value = i.fornecedor || ''; }
       upd();
     },
     onSave: root => {
-      const dados = { data: F(root, 'data') || today(), insumoId: F(root, 'insumoId'), qtd: pn(F(root, 'qtd')), valor: pn(F(root, 'valor')), frete: pn(F(root, 'frete')), fornecedor: F(root, 'fornecedor').trim() };
-      if (!dados.insumoId || dados.qtd <= 0) { toast('Informe o material e a quantidade.'); return false; }
-      if (novo) db.compras.push({ id: uid(), ...dados }); else Object.assign(c, dados);
+      const pacotes = pn(F(root, 'pacotes')), fator = pn(F(root, 'fator'));
+      // qtd (na unidade de uso) e valor (total) continuam sendo a base do estoque e do custo médio
+      const dados = { data: F(root, 'data') || today(), insumoId: F(root, 'insumoId'), pacotes, fator, qtd: rnd(pacotes * fator), valor: pn(F(root, 'valor')), frete: pn(F(root, 'frete')), fornecedor: F(root, 'fornecedor').trim() };
+      if (!dados.insumoId || dados.qtd <= 0) { toast('Informe o material, a quantidade e quanto vem em cada embalagem.'); return false; }
+      if (novo) {
+        db.compras.push({ id: uid(), ...dados });
+        const i = get('insumos', dados.insumoId); if (i) i.fator = fator; // já vem preenchido na próxima compra
+      } else Object.assign(c, dados);
       toast('Compra salva — custo e estoque atualizados.');
     },
     onDelete: novo ? null : () => { db.compras = db.compras.filter(x => x !== c); },
@@ -944,7 +1007,7 @@ function viewConfig() {
     <div class="g2">
       <label>Nome do negócio<input id="c_nome" value="${esc(P.nome)}"></label>
       <label>Margem de lucro desejada (%)<input id="c_margem" inputmode="decimal" value="${iv(P.margem * 100)}"></label>
-      <label>Mão de obra por hora (R$)<input id="c_mo" inputmode="decimal" value="${iv(P.maoObraHora)}"></label>
+      <label>Mão de obra por hora (R$)<input id="c_mo" class="money" inputmode="numeric" value="${mv(P.maoObraHora)}"></label>
       <label>Perdas / desperdício (%)<input id="c_perdas" inputmode="decimal" value="${iv(P.perdas * 100)}"></label>
       <label>Impostos estimados (%)<input id="c_imp" inputmode="decimal" value="${iv(P.impostos * 100)}"></label>
       <label>Aparência<select id="c_tema">${[['auto', 'Automática (segue o sistema)'], ['light', 'Clara'], ['dark', 'Escura']].map(([v, l]) => `<option value="${v}" ${v === th ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -1008,8 +1071,15 @@ const ACTIONS = {
   editProduto: id => formProduto(get('produtos', id)),
   novoInsumo: () => formInsumo(),
   editInsumo: id => formInsumo(get('insumos', id)),
-  novaCompra: () => db.insumos.length ? formCompra() : toast('Cadastre um insumo primeiro.'),
+  novaCompra: id => db.insumos.length ? formCompra(null, id) : toast('Cadastre um insumo primeiro.'),
   editCompra: id => formCompra(get('compras', id)),
+  // celular: o botão "+" abre os lançamentos do dia a dia
+  lancar: () => modal({
+    title: 'O que você quer lançar?',
+    body: `<div class="quick">${[['novaVenda', 'bag', 't-pri', 'Venda', 'Vendi um terço'], ['novaProducao', 'sparkles', 't-gold', 'Produção', 'Fiz terços novos'], ['novaCompra', 'cart', 't-blue', 'Compra de material', 'Comprei contas, fio, cruz…']]
+      .map(([a, i, t, n, d]) => `<button type="button" class="tile" data-f="${a}"><div class="kpi-ic ${t}">${ic(i)}</div><div class="grow"><b>${n}</b><span>${d}</span></div>${ic('chevron')}</button>`).join('')}</div>`,
+    onOpen: root => root.addEventListener('click', e => { const t = e.target.closest('[data-f]'); if (t) { dlg.close(); ACTIONS[t.dataset.f](); } }),
+  }),
   novoCliente: () => formCliente(),
   editCliente: id => formCliente(get('clientes', id)),
   addPag: () => $('#pags').insertAdjacentHTML('beforeend', `<div class="g2 pag"><input class="pn" placeholder="Nome" aria-label="Nome"><input class="pt" inputmode="decimal" value="0" aria-label="Taxa %"></div>`),
@@ -1071,6 +1141,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $$('.nav a[data-ic]').forEach(a => a.insertAdjacentHTML('afterbegin', ic(a.dataset.ic)));
   $('#back').innerHTML = ic('back');
   $('#dlgX').innerHTML = ic('x');
+  $('#fab').innerHTML = ic('plus');
   applyTheme();
   load();
   if (typeof Sync !== 'undefined') Sync.init(); // antes do render: trata o link do QR Code (#conectar=…)
