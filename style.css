@@ -214,7 +214,8 @@ textarea{min-height:70px;resize:vertical}
 .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:0 12px}
 @media (max-width:560px){.g3{grid-template-columns:1fr 1fr}}
 .rows .row{display:grid;grid-template-columns:1fr 80px 100px 36px;gap:8px;align-items:center;margin-bottom:8px}
-.rows.ficha .row{grid-template-columns:1fr 90px 90px 36px}
+.rows.ficha .row{grid-template-columns:1fr 72px 104px 36px}
+@media (max-width:480px){.rows.ficha .row{grid-template-columns:1fr 58px 84px 30px;gap:6px}.rows.ficha .unit{font-size:12px}}
 .rows .row input,.rows .row select{margin-top:0}
 .rows .row .unit{font-size:13px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .rows:empty::before{content:"Nenhum item ainda — toque em um terço acima.";display:block;color:var(--muted);font-size:14px;padding:6px 0 10px}
@@ -225,6 +226,16 @@ textarea{min-height:70px;resize:vertical}
 .sum>div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
 .sum .b{font-weight:800;border-top:1px solid var(--line);margin-top:4px;padding-top:8px}
 .hint{font-size:13px;color:var(--muted);margin:-4px 0 12px}
+.hint .i{width:14px;height:14px;vertical-align:-2px}
+/* linha de lista com dois toques: abrir (esquerda) e uma ação rápida (direita) */
+.li-split{cursor:default;padding:0 12px 0 0}
+.li-split:hover{background:none}
+.li-open{display:flex;align-items:center;gap:12px;flex:1;min-width:0;padding:12px 0 12px 14px;border:0;background:none;text-align:left;cursor:pointer;color:inherit;border-radius:0}
+.li-open:hover{background:var(--soft)}
+/* "Mais opções": o que quase nunca muda fica recolhido */
+details.mais{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line)}
+details.mais summary{color:var(--muted);font-size:13px}
+.chip .muted{margin-left:2px;font-size:12px}
 .muted{color:var(--muted)}
 .pos{color:var(--ok)} .neg{color:var(--bad)}
 
@@ -401,3 +412,6 @@ code{background:var(--soft);padding:2px 6px;border-radius:6px;font-size:13px}
   .li{padding:14px}
   main{padding-bottom:150px}
 }
+
+/* controle de estoque desligado (Configurações): some do menu */
+.sem-estoque .nav a[data-r=producao],.sem-estoque .nav a[data-r=estoque]{display:none}

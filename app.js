@@ -236,6 +236,8 @@ function novaProducao(produtoId, qtd, data) {
     consumo: p.ficha.map(f => ({ insumoId: f.insumoId, qtd: rnd(f.qtd * qtd) })),
   };
 }
+// controle de estoque (terços prontos, materiais, mínimos, produção): desligado por padrão; liga em Configurações
+const comEstoque = () => db.params.estoque === true;
 const vendasAtivas = () => db.vendas.filter(v => v.status !== 'Cancelada');
 const nextCode = (col, prefix, pad = 3) => {
   const n = Math.max(0, ...db[col].map(x => parseInt(String(x.codigo || x.numero || '').replace(/\D/g, '')) || 0)) + 1;
@@ -315,8 +317,8 @@ const ROUTES = {
   galeria: ['Galeria de fotos', () => viewGaleria()],
   divulgar: ['Criar post', () => viewDivulgar(), 'galeria'],
   oracoes: ['Oração do dia', () => viewOracoes()],
-  produtos: ['Produtos e preços', viewProdutos, 'mais'], insumos: ['Insumos', viewInsumos, 'mais'],
-  compras: ['Compras de insumos', viewCompras, 'mais'], clientes: ['Clientes', viewClientes, 'mais'],
+  produtos: ['Terços e preços', viewProdutos, 'mais'], insumos: ['Materiais e compras', viewInsumos, 'mais'],
+  compras: ['Compras feitas', viewCompras, 'insumos'], clientes: ['Clientes', viewClientes, 'mais'],
   config: ['Configurações', viewConfig, 'mais'], instagram: ['Instagram', () => viewInstagram(), 'mais'],
   sync: ['Computador e celular', () => Sync.view(), 'mais'], backup: ['Backup e exportação', viewBackup, 'mais'],
 };
@@ -333,7 +335,9 @@ function render() {
     $('#fab').hidden = true;
     return;
   }
-  const r = location.hash.slice(1) || 'inicio';
+  document.body.classList.toggle('sem-estoque', !comEstoque());
+  let r = location.hash.slice(1) || 'inicio';
+  if (!comEstoque() && (r === 'producao' || r === 'estoque')) r = 'inicio';
   const [title, fn, parent] = ROUTES[r] || ROUTES.inicio;
   $('#title').textContent = title;
   $('.top').hidden = r === 'inicio';
@@ -341,7 +345,8 @@ function render() {
   document.title = `${title} · ${db.params.nome || 'Terços'}`;
   $('#back').hidden = !parent;
   $('#back').onclick = () => location.hash = parent;
-  $$('.nav a[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === (parent || r)));
+  let raiz = r; while (ROUTES[raiz]?.[2]) raiz = ROUTES[raiz][2];   // sobe até o item do menu (ex.: compras → materiais → cadastros)
+  $$('.nav a[data-r]').forEach(a => a.classList.toggle('on', a.dataset.r === raiz));
   const late = backupAtrasado();
   $('#bkBadge').className = 'sync ' + (late ? 'login' : 'ok');
   $('#bkBadge').innerHTML = late ? `${ic('shield')}<span>Fazer backup</span>` : `${ic('shield')}<span>Backup em dia</span>`;
@@ -400,15 +405,15 @@ function viewInicio() {
   const naoPub = (db.galeria || []).filter(f => f.status === 'nova').length;
   if (naoPub) alerts.push(['info', 'instagram', `${naoPub} foto(s) na galeria esperando publicação. <a href="#galeria">Ver galeria</a>`]);
   if (!oracaoPostada(today())) alerts.push(['info', 'pray', `Oração de hoje: <b>${esc(oracaoDoDia(today()).t)}</b> — ainda não postada. <a href="#oracoes">Criar o post</a>`]);
-  for (const p of produtosOrd()) {
+  if (comEstoque()) for (const p of produtosOrd()) {
     const e = estoqueProduto(p.id);
     if (e < 0) alerts.push(['bad', 'sparkles', `<b>${esc(p.nome)}</b>: faltam ${fmt(-e)} para entregar — produzir.`]);
     else if (p.estoqueMin > 0 && e <= p.estoqueMin) alerts.push(['warn', 'box', `<b>${esc(p.nome)}</b>: só ${fmt(e)} pronto(s) (mínimo ${fmt(p.estoqueMin)}).`]);
   }
-  for (const i of insumosOrd()) {
+  if (comEstoque()) for (const i of insumosOrd()) {
     const e = estoqueInsumo(i.id);
     if (e < 0) alerts.push(['bad', 'alert', `<b>${esc(i.nome)}</b>: estoque negativo (${fmt(e)} ${esc(i.unidade)}) — confira as compras.`]);
-    else if (i.estoqueMin > 0 && e <= i.estoqueMin) alerts.push(['warn', 'cart', `<b>${esc(i.nome)}</b>: restam ${fmt(e)} ${esc(i.unidade)}. <a href="#compras" data-act="novaCompra" data-id="${i.id}">Registrar compra</a>`]);
+    else if (i.estoqueMin > 0 && e <= i.estoqueMin) alerts.push(['warn', 'cart', `<b>${esc(i.nome)}</b>: restam ${fmt(e)} ${esc(i.unidade)}. <a href="#insumos" data-act="novaCompra" data-id="${i.id}">Registrar compra</a>`]);
   }
 
   const enc = vendasAtivas().filter(v => v.entrega === 'A entregar').sort((a, b) => (a.dataEntrega || '9').localeCompare(b.dataEntrega || '9'));
@@ -424,7 +429,7 @@ function viewInicio() {
     </div>
     <div class="hero-act">
       <button class="btn light" data-act="novaVenda">${ic('plus')}Nova venda</button>
-      <button class="btn glass" data-act="novaProducao">${ic('sparkles')}Produção</button>
+      ${comEstoque() ? `<button class="btn glass" data-act="novaProducao">${ic('sparkles')}Produção</button>` : ''}
       <button class="btn glass" data-act="novaCompra">${ic('cart')}Compra</button>
       <a class="btn glass" href="#galeria">${ic('image')}Galeria</a>
     </div>
@@ -511,7 +516,7 @@ function formVenda(v) {
       </div>
       <datalist id="dlCli">${db.clientes.map(c => `<option value="${esc(c.nome)}">`).join('')}</datalist>
       <div class="sec" style="margin-top:4px">Toque para adicionar</div>
-      <div class="picks">${produtosOrd().map(p => `<button type="button" class="pick" data-f="pick" data-id="${p.id}">${foto(p)}<span class="pick-n">${esc(p.nome)}</span><span class="pick-p">${brl(p.preco)}</span><span class="pick-e">${fmt(estoqueProduto(p.id))} em estoque</span></button>`).join('')}</div>
+      <div class="picks">${produtosOrd().map(p => `<button type="button" class="pick" data-f="pick" data-id="${p.id}">${foto(p)}<span class="pick-n">${esc(p.nome)}</span><span class="pick-p">${brl(p.preco)}</span>${comEstoque() ? `<span class="pick-e">${fmt(estoqueProduto(p.id))} em estoque</span>` : ''}</button>`).join('')}</div>
       <div class="sec">Itens da venda</div>
       <div class="rows" id="itens">${v.itens.map(itemRow).join('')}</div>
       <div class="g3" style="margin-top:14px">
@@ -584,7 +589,7 @@ function formVenda(v) {
       if (novo) {
         const nv = { id: uid(), numero: nextCode('vendas', 'V', 4), ...dados };
         db.vendas.push(nv);
-        const falta = itens.filter(i => estoqueProduto(i.produtoId) < 0);
+        const falta = comEstoque() ? itens.filter(i => estoqueProduto(i.produtoId) < 0) : [];
         toast(`Venda ${nv.numero} salva.` + (falta.length ? ' Estoque ficou negativo — registre a produção.' : ''));
       } else { Object.assign(v, dados); toast('Venda atualizada.'); }
     },
@@ -661,7 +666,7 @@ function viewEstoque() {
   return `
   <div class="kpis">
     ${kpi('cross', 't-pri', 'Terços prontos', fmt(prods.reduce((s, p) => s + Math.max(0, estoqueProduto(p.id)), 0)), `${brl(valProd)} a custo`)}
-    ${kpi('layers', 't-gold', 'Insumos em estoque', brl(valIns), `${ins.length} materiais`)}
+    ${kpi('layers', 't-gold', 'Materiais em estoque', brl(valIns), `${ins.length} materiais`)}
     ${kpi('cart', nBaixo ? 't-warn' : 't-ok', 'Para comprar', fmt(nBaixo), nBaixo ? 'materiais no mínimo' : 'nada em falta')}
   </div>
   <div class="sec">Terços prontos</div>
@@ -673,7 +678,7 @@ function viewEstoque() {
       <div class="pline"><span>Dá para fazer</span><b>${pf == null ? '—' : fmt(pf)}</b></div>
       <div class="bar" style="margin:8px 0 0;gap:6px"><button class="btn sm" data-act="ajuste" data-id="produto:${p.id}">${ic('sliders')}Ajustar</button><button class="btn sm" data-act="divulgar" data-id="${p.id}">${ic('instagram')}Divulgar</button></div></div></div>`;
   }).join('')}</div>
-  <div class="card"><div class="card-h">${ic('layers')}<h3>Insumos</h3><a class="btn sm" href="#compras">${ic('cart')}Compras</a></div><div class="tw"><table>
+  <div class="card"><div class="card-h">${ic('layers')}<h3>Materiais</h3><button class="btn sm" data-act="novaCompra">${ic('cart')}Comprei material</button></div><div class="tw"><table>
     <thead><tr><th>Material</th><th class="n">Em estoque</th><th class="n hide-sm">Mínimo</th><th class="n hide-sm">Custo un.</th><th class="n hide-sm">Valor</th><th></th><th></th></tr></thead><tbody>
     ${ins.map(i => { const e = estoqueInsumo(i.id), c = custoInsumo(i.id); return `<tr><td><b>${esc(i.nome)}</b></td><td class="n">${fmt(e, 3)} ${esc(i.unidade)}</td><td class="n hide-sm">${fmt(i.estoqueMin)}</td><td class="n hide-sm">${brlU(c)}</td><td class="n hide-sm">${brl(Math.max(0, e) * c)}</td><td>${tag(e, i.estoqueMin)}</td><td class="n"><button class="btn sm" data-act="ajuste" data-id="insumo:${i.id}">Ajustar</button></td></tr>`; }).join('')}
     </tbody></table></div></div>
@@ -704,9 +709,8 @@ function formAjuste(ref) {
 function viewMais() {
   const t = (r, icn, tone, title, s) => `<a class="tile" href="#${r}"><div class="kpi-ic ${tone}">${ic(icn)}</div><div class="grow"><b>${title}</b><span>${s}</span></div>${ic('chevron')}</a>`;
   return `<div class="tiles">
-    ${t('produtos', 'tag', 't-pri', 'Produtos e preços', `${db.produtos.length} modelos · fotos, ficha técnica e preço`)}
-    ${t('insumos', 'layers', 't-gold', 'Insumos', `${db.insumos.length} materiais cadastrados`)}
-    ${t('compras', 'cart', 't-blue', 'Compras de insumos', `${db.compras.length} compras registradas`)}
+    ${t('produtos', 'tag', 't-pri', 'Terços e preços', `${db.produtos.length} modelos · foto, materiais e preço`)}
+    ${t('insumos', 'layers', 't-gold', 'Materiais e compras', `${db.insumos.length} materiais · ${db.compras.length} compras`)}
     ${t('clientes', 'users', 't-rose', 'Clientes', `${db.clientes.length} clientes`)}
     ${t('sync', 'refresh', 't-blue', 'Computador e celular', typeof Sync !== 'undefined' && Sync.ativo() ? 'Sincronização ligada' : 'Usar nos dois ao mesmo tempo')}
     ${t('instagram', 'instagram', 't-rose', 'Instagram', 'Conta conectada, entrar e sair')}
@@ -716,32 +720,33 @@ function viewMais() {
 }
 
 function viewProdutos() {
-  topActions(`<button class="btn pri" data-act="novoProduto">${ic('plus')}Novo produto</button>`);
+  topActions(`<button class="btn pri" data-act="novoProduto">${ic('plus')}Novo terço</button>`);
   const ps = produtosOrd();
   return `<div class="pgrid">${ps.map(p => {
     const i = precoInfo(p), e = estoqueProduto(p.id), baixa = i.margem < db.params.margem;
     return `<button class="pcard" data-act="editProduto" data-id="${p.id}">${foto(p, '', `<span class="badge"><span class="tag ${baixa ? 'warn' : 'ok'}">margem ${pct(i.margem)}</span></span>`)}
-      <div class="pbody"><div class="pcode">${esc(p.codigo)}</div><div class="pname">${esc(p.nome)}</div><div class="pprice">${brl(p.preco)}</div>
+      <div class="pbody"><div class="pname">${esc(p.nome)}</div><div class="pprice">${brl(p.preco)}</div>
       <div class="pline"><span>Custo</span><b>${brl(i.total)}</b></div>
-      <div class="pline"><span>Lucro por terço</span><b class="${i.lucro < 0 ? 'neg' : ''}">${brl(i.lucro)}</b></div>
-      <div class="pline"><span>Preço sugerido</span><b>${brl(i.sugerido)}</b></div>
-      <div class="pline"><span>Em estoque</span><b>${fmt(e)}</b></div></div></button>`;
+      <div class="pline"><span>Lucro</span><b class="${i.lucro < 0 ? 'neg' : ''}">${brl(i.lucro)}</b></div>
+      ${comEstoque() ? `<div class="pline"><span>Prontos</span><b>${fmt(e)}</b></div>` : ''}</div></button>`;
   }).join('')}</div>
-  ${ps.length ? '' : empty('tag', 'Nenhum produto', 'Cadastre seu primeiro modelo de terço.')}
-  <div class="alert info">${ic('scale')}<div>Custo = materiais + mão de obra (${brl(db.params.maoObraHora)}/h) + perdas (${pct(db.params.perdas)}). O preço sugerido garante margem de ${pct(db.params.margem)} já descontando taxa de ${pct(taxaRef())} e impostos de ${pct(db.params.impostos)}.</div></div>`;
+  ${ps.length ? '' : empty('tag', 'Nenhum terço cadastrado', 'Toque em “Novo terço” para cadastrar o primeiro.')}`;
 }
+const optsMateriais = sel => `<option value="">Material…</option>${opts(insumosOrd(), sel)}<option value="__novo">+ Cadastrar material novo…</option>`;
 function fichaRow(f = {}) {
   return `<div class="row">
-    <select name="insumoId" aria-label="Material"><option value="">Material…</option>${opts(insumosOrd(), f.insumoId)}</select>
+    <select name="insumoId" aria-label="Material">${optsMateriais(f.insumoId)}</select>
     <input name="qtd" inputmode="decimal" placeholder="Qtd" aria-label="Quantidade" value="${iv(f.qtd ?? '')}">
     <span class="unit"></span>
     <button type="button" class="rm" data-f="rm" aria-label="Remover">${ic('trash')}</button></div>`;
 }
+// Cadastro de terço: só foto, nome, preço e materiais. Código é automático; tempo e mínimo ficam em "Mais opções".
 function formProduto(p) {
   const novo = !p;
-  p = p || { id: uid(), codigo: nextCode('produtos', 'TER'), nome: '', tempoMin: 30, preco: 0, estoqueMin: 1, foto: '', ficha: [{}] };
+  p = p || { id: uid(), codigo: nextCode('produtos', 'TER'), nome: '', tempoMin: 30, preco: 0, estoqueMin: 1, foto: '', ficha: [] };
+  const outros = produtosOrd().filter(x => x.id !== p.id && x.ficha?.length);
   modal({
-    title: novo ? 'Novo produto' : p.nome,
+    title: novo ? 'Novo terço' : p.nome,
     body: `
       <div class="foto-edit">
         <div>
@@ -749,46 +754,62 @@ function formProduto(p) {
           <div class="foto-btns">
             <label class="btn sm" style="margin:0">${ic('camera')}Foto<input type="file" name="fotoFile" accept="image/*" hidden></label>
             <button type="button" class="btn sm ghost" data-f="semFoto">Tirar</button>
-            ${novo ? '' : `<button type="button" class="btn sm" data-f="divulgar">${ic('instagram')}Criar post</button>`}
           </div>
         </div>
-        <div class="g2">
-          <label>Código<input name="codigo" value="${esc(p.codigo)}"></label>
-          <label>Nome<input name="nome" value="${esc(p.nome)}"></label>
-          <label>Tempo (min)<input name="tempoMin" inputmode="decimal" value="${iv(p.tempoMin)}"></label>
-          <label>Preço de venda<input name="preco" class="money" inputmode="numeric" value="${mv(p.preco)}"></label>
-          <label>Estoque mínimo<input name="estoqueMin" inputmode="decimal" value="${iv(p.estoqueMin)}"></label>
+        <div>
+          <label>Nome do terço<input name="nome" value="${esc(p.nome)}" placeholder="Ex.: Terço Clássico"></label>
+          <label>Preço de venda (R$)<input name="preco" class="money" inputmode="numeric" placeholder="0,00" value="${p.preco ? mv(p.preco) : ''}"></label>
         </div>
       </div>
-      <div class="sec">Ficha técnica · materiais de 1 terço</div>
+      <div class="sec">Materiais usados em 1 terço</div>
+      ${outros.length ? `<label>Copiar os materiais de outro terço<select name="copiar"><option value="">Escolher…</option>${opts(outros, '')}</select></label>` : ''}
       <div class="rows ficha" id="ficha">${p.ficha.map(fichaRow).join('')}</div>
       <button type="button" class="btn sm" data-f="add">${ic('plus')}Material</button>
-      <div class="sum" id="resumo"></div>`,
+      <div class="sum" id="resumo"></div>
+      <details class="mais"><summary>Mais opções</summary>
+        <div class="g2">
+          <label>Tempo para fazer (minutos)<input name="tempoMin" inputmode="decimal" value="${iv(p.tempoMin)}"></label>
+          ${comEstoque() ? `<label>Avisar quando tiver menos de (prontos)<input name="estoqueMin" inputmode="decimal" value="${iv(p.estoqueMin)}"></label>` : ''}
+        </div>
+        ${novo ? '' : `<div class="bar" style="margin:0"><button type="button" class="btn sm" data-f="duplicar">${ic('copy')}Duplicar este terço</button><button type="button" class="btn sm" data-f="divulgar">${ic('instagram')}Criar post</button></div>`}
+      </details>`,
     onOpen: root => {
       root._foto = p.foto || '';
-      const read = () => $$('#ficha .row', root).map(r => ({ insumoId: F(r, 'insumoId'), qtd: pn(F(r, 'qtd')) })).filter(f => f.insumoId && f.qtd > 0);
+      const read = () => $$('#ficha .row', root).map(r => ({ insumoId: F(r, 'insumoId'), qtd: pn(F(r, 'qtd')) })).filter(f => f.insumoId && f.insumoId !== '__novo' && f.qtd > 0);
+      const lerDados = () => ({ nome: F(root, 'nome').trim(), tempoMin: pn(F(root, 'tempoMin')), preco: pn(F(root, 'preco')), estoqueMin: root.querySelector('[name=estoqueMin]') ? pn(F(root, 'estoqueMin')) : p.estoqueMin, ficha: read(), foto: root._foto });
       const upd = () => {
         $$('#ficha .row', root).forEach(r => {
-          const id = F(r, 'insumoId');
-          r.querySelector('.unit').textContent = get('insumos', id) ? brl(pn(F(r, 'qtd')) * custoInsumo(id)) : '';
+          const i = get('insumos', F(r, 'insumoId'));
+          r.querySelector('.unit').textContent = i ? `${i.unidade} · ${brl(pn(F(r, 'qtd')) * custoInsumo(i.id))}` : '';
         });
         const preco = pn(F(root, 'preco')), i = precoInfo({ ficha: read(), tempoMin: pn(F(root, 'tempoMin')) }, preco);
         $('#resumo', root).innerHTML = `
-          <div><span>Materiais</span><span>${brl(i.mat)}</span></div>
-          <div><span>Mão de obra</span><span>${brl(i.mo)}</span></div>
-          <div><span>Perdas</span><span>${brl(i.perdas)}</span></div>
-          <div class="b"><span>Custo total</span><span>${brl(i.total)}</span></div>
+          <div class="b" style="border:0;margin:0;padding-top:3px"><span>Custo para fazer</span><span>${brl(i.total)}</span></div>
+          <div class="muted" style="font-size:13px"><span>materiais ${brl(i.mat)} + mão de obra ${brl(i.mo)} + perdas ${brl(i.perdas)}</span></div>
           <div><span>Preço sugerido</span><span>${brl(i.sugerido)} <button type="button" class="btn sm" data-f="usar">usar ${brl(Math.ceil(i.sugerido))}</button></span></div>
-          <div class="b"><span>Lucro por terço · margem</span><span class="${i.margem < db.params.margem ? 'neg' : 'pos'}">${brl(i.lucro)} · ${pct(i.margem)}</span></div>`;
+          ${preco > 0 ? `<div class="b"><span>Lucro por terço</span><span class="${i.margem < db.params.margem ? 'neg' : 'pos'}">${brl(i.lucro)} · ${pct(i.margem)}</span></div>` : ''}`;
         root._sug = Math.ceil(i.sugerido);
       };
       root.addEventListener('input', upd);
       root.addEventListener('change', async e => {
-        if (e.target.name === 'fotoFile') {
-          const f = e.target.files[0]; if (!f) return;
+        const t = e.target;
+        if (t.name === 'fotoFile') {
+          const f = t.files[0]; if (!f) return;
           try { root._foto = await resizeImage(f); $('#fotoPrev', root).innerHTML = foto({ foto: root._foto }); }
           catch { toast('Não foi possível ler essa imagem.'); }
           return;
+        }
+        if (t.name === 'copiar' && t.value) {
+          const o = get('produtos', t.value); t.value = '';
+          if (read().length && !confirm(`Trocar os materiais atuais pelos do “${o.nome}”?`)) return;
+          $('#ficha', root).innerHTML = o.ficha.map(fichaRow).join('');
+        }
+        if (t.name === 'insumoId' && t.value === '__novo') {
+          const nome = (prompt('Nome do material novo (ex.: Conta de vidro 8 mm):') || '').trim();
+          let i = nome && db.insumos.find(x => x.nome.trim().toLowerCase() === nome.toLowerCase());
+          if (nome && !i) { i = { id: uid(), codigo: nextCode('insumos', 'INS'), nome, unidade: 'un', estoqueMin: 0, fornecedor: '', custoManual: 0, embalagem: 'pacote', fator: 1 }; db.insumos.push(i); save(); toast(`“${nome}” cadastrado. Registre a compra dele depois, em Materiais.`); }
+          // refaz as listas (o material novo aparece em todas as linhas)
+          for (const s of $$('#ficha [name=insumoId]', root)) { const v = s === t ? (i ? i.id : '') : s.value; s.innerHTML = optsMateriais(v); }
         }
         upd();
       });
@@ -800,87 +821,101 @@ function formProduto(p) {
         if (f === 'usar') { root.querySelector('[name=preco]').value = mv(root._sug); upd(); }
         if (f === 'semFoto') { root._foto = ''; $('#fotoPrev', root).innerHTML = foto({ id: p.id }); }
         if (f === 'divulgar') { dlg.close(); ACTIONS.divulgar(p.id); }
+        if (f === 'duplicar') {
+          const d = lerDados();
+          const copia = { ...p, ...d, id: uid(), codigo: nextCode('produtos', 'TER'), nome: (d.nome || p.nome) + ' (cópia)', ficha: d.ficha.map(x => ({ ...x })) };
+          db.produtos.push(copia);
+          if (!save()) { db.produtos.pop(); return; }
+          dlg.close(); render(); formProduto(copia); toast('Terço duplicado: troque o nome, a foto e o que for diferente.');
+        }
       });
-      upd(); root._read = read;
+      upd(); root._ler = lerDados;
     },
     onSave: root => {
-      const nome = F(root, 'nome').trim();
-      if (!nome) { toast('Informe o nome.'); return false; }
-      const codigo = F(root, 'codigo').trim();
-      if (db.produtos.some(x => x !== p && x.codigo === codigo)) { toast('Já existe um produto com esse código.'); return false; }
-      const dados = { codigo, nome, tempoMin: pn(F(root, 'tempoMin')), preco: pn(F(root, 'preco')), estoqueMin: pn(F(root, 'estoqueMin')), ficha: root._read(), foto: root._foto };
+      const dados = root._ler();
+      if (!dados.nome) { toast('Informe o nome do terço.'); return false; }
       const antes = novo ? null : { ...p };
       if (novo) db.produtos.push({ ...p, ...dados }); else Object.assign(p, dados);
       if (!save()) { if (novo) db.produtos.pop(); else Object.assign(p, antes); return false; }
     },
     onDelete: novo ? null : () => {
       if (db.vendas.some(v => v.itens.some(i => i.produtoId === p.id)) || db.producoes.some(x => x.produtoId === p.id)) {
-        toast('Este produto tem vendas ou produções — não dá para excluir.'); return false;
+        toast('Este terço tem vendas ou produções — não dá para excluir.'); return false;
       }
       db.produtos = db.produtos.filter(x => x !== p);
     },
   });
 }
 
-function viewInsumos() {
-  topActions(`<button class="btn" data-act="novaCompra">${ic('cart')}Compra</button><button class="btn pri" data-act="novoInsumo">${ic('plus')}Insumo</button>`);
-  return `<div class="list">${insumosOrd().map(i => {
-    const n = db.compras.filter(c => c.insumoId === i.id).length, e = estoqueInsumo(i.id);
-    const low = e < 0 || (i.estoqueMin > 0 && e <= i.estoqueMin);
-    return `<button class="li" data-act="editInsumo" data-id="${i.id}"><div class="av ${low ? 't-warn' : 't-gold'}">${ic('layers')}</div><div class="li-main"><div class="li-t">${esc(i.nome)}</div>
-      <div class="li-s">${fatorDe(i) > 1 ? `${esc(embDe(i))} com ${fmt(fatorDe(i), 3)} ${esc(i.unidade)} · ` : ''}${esc(i.fornecedor || 'sem fornecedor')} · ${n} compra(s)</div></div>
-      <div class="li-r"><div class="li-v">${brlU(custoInsumo(i.id))}<span class="muted" style="font-weight:500">/${esc(i.unidade)}</span></div><span class="tag ${low ? 'warn' : ''}">${fmt(e, 3)} ${esc(i.unidade)} em estoque</span></div></button>`;
-  }).join('') || empty('layers', 'Nenhum insumo')}</div>
-  <p class="hint">O custo é a média de todas as compras daquele material (inclui frete).</p>`;
-}
-// como o material é comprado: nome da embalagem e quanto vem em cada uma (fator de conversão para a unidade de uso)
+/* ---------------- Materiais e compras (uma tela só) ---------------- */
+// como o material é comprado: quanto vem em cada pacote (fator de conversão para a unidade de uso)
 const embDe = i => i?.embalagem || 'pacote';
 const fatorDe = i => +i?.fator > 0 ? +i.fator : 1;
+const UNIDADES = [['un', 'Unidade', 'contas, cruzes, medalhas…'], ['m', 'Metro', 'fio, corrente…'], ['g', 'Grama', 'miçanga a granel…']];
+const nomeUn = u => u === 'un' ? 'unidade' : u === 'm' ? 'metro' : u === 'g' ? 'grama' : u;
+
+function viewInsumos() {
+  topActions(`<a class="btn" href="#compras">${ic('receipt')}Compras feitas</a><button class="btn pri" data-act="novaCompra">${ic('cart')}Comprei material</button>`);
+  const ins = insumosOrd();
+  return `<div class="list">${ins.map(i => {
+    const est = comEstoque(), e = estoqueInsumo(i.id), low = est && (e < 0 || (i.estoqueMin > 0 && e <= i.estoqueMin)), n = db.compras.filter(c => c.insumoId === i.id).length;
+    return `<div class="li li-split">
+      <button class="li-open" data-act="editInsumo" data-id="${i.id}"><div class="av ${low ? 't-warn' : 't-gold'}">${ic('layers')}</div>
+        <div class="li-main"><div class="li-t">${esc(i.nome)}</div>
+        <div class="li-s">${est ? `tem <b class="${low ? 'neg' : ''}">${fmt(e, 3)} ${esc(i.unidade)}</b> · ` : ''}${brlU(custoInsumo(i.id))} cada ${esc(nomeUn(i.unidade))}${est ? (low ? ' · <span class="neg">acabando</span>' : '') : ` · ${n} compra(s)`}</div></div></button>
+      <button class="btn sm" data-act="novaCompra" data-id="${i.id}" aria-label="Registrar compra de ${esc(i.nome)}">${ic('cart')}<span class="hide-sm">Comprar</span></button>
+    </div>`;
+  }).join('') || empty('layers', 'Nenhum material ainda', 'Toque em “Comprei material”: o material é cadastrado junto com a primeira compra.')}</div>
+  ${ins.length ? '<p class="hint">Toque no material para ver e corrigir as compras. O custo é a média do que você pagou.</p>' : ''}`;
+}
+
+// Detalhes de um material: nome, como conta, aviso de estoque e as compras dele.
 function formInsumo(i) {
   const novo = !i;
   i = i || { codigo: nextCode('insumos', 'INS'), nome: '', unidade: 'un', estoqueMin: 0, fornecedor: '', custoManual: 0, embalagem: 'pacote', fator: 1 };
   const compras = novo ? [] : db.compras.filter(c => c.insumoId === i.id).sort((a, b) => b.data.localeCompare(a.data));
+  const uns = UNIDADES.some(u => u[0] === i.unidade) ? UNIDADES : [...UNIDADES, [i.unidade, i.unidade, '']];
   modal({
-    title: novo ? 'Novo insumo' : i.nome,
+    title: novo ? 'Novo material' : i.nome,
     body: `
-      <div class="g3">
-        <label>Código<input name="codigo" value="${esc(i.codigo)}"></label>
-        <label style="grid-column:span 2">Descrição<input name="nome" value="${esc(i.nome)}"></label>
-        <label>Unidade de uso<input name="unidade" list="dlUn" value="${esc(i.unidade)}"></label>
-        <label>Estoque mínimo<input name="estoqueMin" inputmode="decimal" value="${iv(i.estoqueMin)}"></label>
+      <label>Nome<input name="nome" value="${esc(i.nome)}"></label>
+      <div class="sec" style="margin-top:4px">Como você conta este material</div>
+      <div class="chips" id="unChips">${uns.map(([v, l]) => `<button type="button" class="chip ${v === i.unidade ? 'on' : ''}" data-un="${esc(v)}">${esc(l)}</button>`).join('')}</div>
+      ${comEstoque() ? `<label>Avisar quando tiver menos de <span id="unMin"></span><input name="estoqueMin" inputmode="decimal" value="${iv(i.estoqueMin)}"></label>` : ''}
+      ${novo ? '' : `<div class="sum">${comEstoque() ? `<div><span>Em estoque</span><b>${fmt(estoqueInsumo(i.id), 3)} ${esc(i.unidade)}</b></div>` : ''}
+        <div class="b" ${comEstoque() ? '' : 'style="border:0;margin:0;padding-top:3px"'}><span>Custo médio</span><span>${brlU(custoInsumo(i.id))} cada</span></div></div>
+        <button type="button" class="btn" data-f="comprar" style="margin-top:12px">${ic('cart')}Comprei mais deste material</button>`}
+      ${compras.length ? `<div class="sec">Compras (toque para corrigir)</div><div class="list">${compras.map(c => `<button type="button" class="li" data-f="compra" data-id="${c.id}">
+        <div class="li-main"><div class="li-t">${fdate(c.data)} · ${fmt(c.qtd, 3)} ${esc(i.unidade)}</div><div class="li-s">${brlU((+c.valor + +c.frete) / c.qtd)} cada${c.fornecedor ? ' · ' + esc(c.fornecedor) : ''}</div></div>
+        <div class="li-r"><div class="li-v">${brl(+c.valor + +c.frete)}</div></div></button>`).join('')}</div>` : ''}
+      <details class="mais"><summary>Mais opções</summary>
         <label>Fornecedor<input name="fornecedor" value="${esc(i.fornecedor)}"></label>
-      </div>
-      <datalist id="dlUn"><option value="un"><option value="m"><option value="cm"><option value="g"></datalist>
-      <div class="sec">Como você compra</div>
-      <div class="g2">
-        <label>Embalagem<input name="embalagem" list="dlEmb" value="${esc(embDe(i))}"></label>
-        <label>Cada embalagem vem com <span id="unEmb"></span><input name="fator" inputmode="decimal" value="${iv(fatorDe(i))}"></label>
-      </div>
-      <datalist id="dlEmb"><option value="pacote"><option value="caixa"><option value="rolo"><option value="cartela"><option value="fio"><option value="unidade"></datalist>
-      <p class="hint">Ex.: pacote com 420 contas → embalagem “pacote”, vem com 420. Na compra você informa só quantos pacotes e o preço de cada um.</p>
-      ${novo ? '' : `<button type="button" class="btn sm" data-f="comprar">${ic('cart')}Registrar compra deste material</button>`}
-      ${compras.length ? `<div class="sec">Compras</div><div class="tw"><table><thead><tr><th>Data</th><th class="n">Qtd</th><th class="n">Valor</th><th class="n">Custo un.</th><th class="hide-sm">Fornecedor</th></tr></thead><tbody>
-        ${compras.map(c => `<tr><td>${fdate(c.data)}</td><td class="n">${fmt(c.qtd, 3)}</td><td class="n">${brl(+c.valor + +c.frete)}</td><td class="n">${brlU((+c.valor + +c.frete) / c.qtd)}</td><td class="hide-sm">${esc(c.fornecedor)}</td></tr>`).join('')}
-        </tbody></table></div><div class="sum"><div class="b"><span>Custo médio</span><span>${brlU(custoInsumo(i.id))} / ${esc(i.unidade)}</span></div></div>`
-        : `<label>Custo por unidade (enquanto não houver compra registrada)<input name="custoManual" inputmode="decimal" placeholder="Ex.: 0,015" value="${iv(i.custoManual)}"></label>`}`,
+        ${compras.length ? '' : `<label>Custo estimado de cada um (enquanto não registrar uma compra)<input name="custoManual" inputmode="decimal" placeholder="Ex.: 0,015" value="${iv(i.custoManual)}"></label>`}
+      </details>`,
     onOpen: root => {
-      const upd = () => { $('#unEmb', root).textContent = `(${F(root, 'unidade').trim() || 'un'})`; };
-      root.addEventListener('input', upd); upd();
-      root.addEventListener('click', e => { if (e.target.closest('[data-f=comprar]')) { dlg.close(); formCompra(null, i.id); } });
+      let un = i.unidade;
+      const upd = () => { const m = $('#unMin', root); if (m) m.textContent = `(${un})`; };
+      root._un = () => un;
+      root.addEventListener('click', e => {
+        const ch = e.target.closest('[data-un]');
+        if (ch) { un = ch.dataset.un; $$('[data-un]', root).forEach(b => b.classList.toggle('on', b === ch)); upd(); return; }
+        const t = e.target.closest('[data-f]'); if (!t) return;
+        if (t.dataset.f === 'comprar') { dlg.close(); formCompra(null, i.id); }
+        if (t.dataset.f === 'compra') { dlg.close(); formCompra(get('compras', t.dataset.id)); }
+      });
+      upd();
     },
     onSave: root => {
       const nome = F(root, 'nome').trim();
-      if (!nome) { toast('Informe a descrição.'); return false; }
-      const codigo = F(root, 'codigo').trim();
-      if (db.insumos.some(x => x !== i && x.codigo === codigo)) { toast('Já existe um insumo com esse código.'); return false; }
-      const dados = { codigo, nome, unidade: F(root, 'unidade').trim() || 'un', estoqueMin: pn(F(root, 'estoqueMin')), fornecedor: F(root, 'fornecedor').trim(),
-        embalagem: F(root, 'embalagem').trim() || 'pacote', fator: pn(F(root, 'fator')) > 0 ? pn(F(root, 'fator')) : 1 };
+      if (!nome) { toast('Informe o nome do material.'); return false; }
+      if (db.insumos.some(x => x !== i && x.nome.trim().toLowerCase() === nome.toLowerCase())) { toast('Já existe um material com esse nome.'); return false; }
+      const dados = { nome, unidade: root._un(), estoqueMin: root.querySelector('[name=estoqueMin]') ? pn(F(root, 'estoqueMin')) : i.estoqueMin, fornecedor: F(root, 'fornecedor').trim() };
       if (root.querySelector('[name=custoManual]')) dados.custoManual = pn(F(root, 'custoManual'));
-      if (novo) db.insumos.push({ id: uid(), custoManual: 0, ...dados }); else Object.assign(i, dados);
+      if (novo) db.insumos.push({ id: uid(), ...i, ...dados }); else Object.assign(i, dados);
     },
     onDelete: novo ? null : () => {
       if (db.produtos.some(p => p.ficha.some(f => f.insumoId === i.id)) || db.compras.some(c => c.insumoId === i.id)) {
-        toast('Este insumo está em uma ficha técnica ou tem compras — não dá para excluir.'); return false;
+        toast('Este material é usado em algum terço ou tem compras — não dá para excluir.'); return false;
       }
       db.insumos = db.insumos.filter(x => x !== i);
     },
@@ -888,75 +923,107 @@ function formInsumo(i) {
 }
 
 function viewCompras() {
-  topActions(`<button class="btn pri" data-act="novaCompra">${ic('plus')}Nova compra</button>`);
+  topActions(`<button class="btn pri" data-act="novaCompra">${ic('cart')}Comprei material</button>`);
   const cs = [...db.compras].sort((a, b) => b.data.localeCompare(a.data));
   const mes = today().slice(0, 7), totMes = cs.filter(c => c.data.startsWith(mes)).reduce((s, c) => s + (+c.valor || 0) + (+c.frete || 0), 0);
   return `${cs.length ? `<div class="bar"><span class="grow"></span><span class="tag">${esc(monthLabel(mes))} · ${brl(totMes)} em compras</span></div>` : ''}
   <div class="list">${cs.map(c => {
     const i = get('insumos', c.insumoId), un = i?.unidade || 'un';
-    const conta = c.pacotes && c.fator > 1 ? `${fmt(c.pacotes, 3)} ${esc(embDe(i))} × ${fmt(c.fator, 3)} = ` : '';
+    const conta = c.pacotes && c.fator > 1 ? `${fmt(c.pacotes, 3)} × ${fmt(c.fator, 3)} = ` : '';
     return `<button class="li" data-act="editCompra" data-id="${c.id}"><div class="av t-blue">${ic('cart')}</div><div class="li-main"><div class="li-t">${esc(nomeInsumo(c.insumoId))}</div>
       <div class="li-s">${fdate(c.data)} · ${conta}${fmt(c.qtd, 3)} ${esc(un)}${c.fornecedor ? ' · ' + esc(c.fornecedor) : ''}</div></div>
       <div class="li-r"><div class="li-v">${brl(+c.valor + +c.frete)}</div><div class="li-s">${brlU((+c.valor + +c.frete) / c.qtd)}/${esc(un)}</div></div></button>`;
   }).join('') || empty('cart', 'Nenhuma compra registrada')}</div>`;
 }
+
+// Compra em 3 perguntas: qual material, quantos vieram, quanto pagou.
+// Material que ainda não existe é cadastrado na hora. Data, frete e fornecedor ficam em "Mais opções".
 function formCompra(c, insumoId) {
   const novo = !c;
-  c = c || { data: today(), insumoId: insumoId || insumosOrd()[0]?.id, valor: '', frete: 0, fornecedor: '' };
-  // compras antigas não tinham embalagem: aparecem como 1 embalagem com tudo dentro
+  const i0 = get('insumos', novo ? insumoId : c.insumoId);
+  c = c || { data: today(), valor: '', frete: 0, fornecedor: i0?.fornecedor || '' };
+  // compras antigas não tinham pacote: aparecem como 1 pacote com tudo dentro
   const pac0 = novo ? 1 : (c.pacotes || 1);
-  const fator0 = novo ? fatorDe(get('insumos', c.insumoId)) : (c.pacotes ? c.fator : c.qtd);
+  const fator0 = novo ? fatorDe(i0) : (c.pacotes ? c.fator : c.qtd);
+  let salvouAlguma = false;
   modal({
-    title: novo ? 'Nova compra de insumo' : 'Compra',
+    title: novo ? 'Comprei material' : 'Corrigir compra',
     body: `
-      <div class="g2">
-        <label>Data<input type="date" name="data" value="${c.data}"></label>
-        <label>Material<select name="insumoId">${opts(insumosOrd(), c.insumoId)}</select></label>
-        <label><span id="lQtd"></span><input name="pacotes" inputmode="decimal" value="${iv(pac0)}"></label>
-        <label><span id="lFator"></span><input name="fator" inputmode="decimal" value="${iv(fator0)}"></label>
-        <label><span id="lPreco"></span><input name="preco" class="money" inputmode="numeric" placeholder="0,00" value="${novo ? '' : mv(c.valor / pac0)}"></label>
-        <label>Total pago (R$)<input name="valor" class="money" inputmode="numeric" placeholder="0,00" value="${mv(c.valor)}"></label>
-        <label>Frete / extra (R$)<input name="frete" class="money" inputmode="numeric" placeholder="0,00" value="${mv(c.frete)}"></label>
-        <label>Fornecedor<input name="fornecedor" value="${esc(c.fornecedor)}"></label>
+      <label>Qual material?<input name="material" list="dlMat" autocomplete="off" placeholder="Digite ou escolha — ex.: Conta acrílica 8 mm" value="${esc(i0?.nome || '')}"></label>
+      <datalist id="dlMat">${insumosOrd().map(i => `<option value="${esc(i.nome)}">`).join('')}</datalist>
+      <p class="hint" id="matInfo"></p>
+      <div id="matNovo" hidden>
+        <div class="sec" style="margin-top:0">Material novo — como você conta ele?</div>
+        <div class="chips">${UNIDADES.map(([v, l, ex], k) => `<button type="button" class="chip ${k ? '' : 'on'}" data-un="${v}">${l}<span class="muted" style="font-weight:500">${ex}</span></button>`).join('')}</div>
       </div>
-      <div class="sum" id="resumo"></div>`,
+      <div class="g2">
+        <label>Quantos pacotes comprou?<input name="pacotes" inputmode="decimal" value="${iv(pac0)}"></label>
+        <label>Quanto vem em cada um? <span id="unLbl"></span><input name="fator" inputmode="decimal" value="${iv(fator0)}"></label>
+      </div>
+      <p class="hint">Ex.: 2 pacotes com 420 contas → 2 e 420. Comprou solto (10 cruzes)? Coloque 1 e 10.</p>
+      <label>Quanto pagou no total? (R$)<input name="valor" class="money" inputmode="numeric" placeholder="0,00" value="${mv(c.valor)}"></label>
+      <div class="sum" id="resumo"></div>
+      <details class="mais"><summary>Mais opções (data, frete, fornecedor)</summary>
+        <div class="g3">
+          <label>Data<input type="date" name="data" value="${c.data}"></label>
+          <label>Frete (R$)<input name="frete" class="money" inputmode="numeric" placeholder="0,00" value="${c.frete ? mv(c.frete) : ''}"></label>
+          <label>Fornecedor<input name="fornecedor" value="${esc(c.fornecedor)}"></label>
+        </div>
+      </details>
+      ${novo ? `<button type="button" class="btn" data-f="outra" style="margin-top:12px;width:100%">${ic('plus')}Salvar e lançar outra compra</button>` : ''}`,
     onOpen: root => {
       const el = n => root.querySelector(`[name=${n}]`);
-      // o total é quantidade × preço; se a pessoa digitar o total, o preço de cada é que se ajusta
-      let digitou = novo ? 'preco' : 'valor';
-      const upd = e => {
-        const n = e?.target?.name, i = get('insumos', F(root, 'insumoId'));
-        const emb = embDe(i), un = i?.unidade || 'un';
-        if (n === 'insumoId' && i) { el('fornecedor').value = i.fornecedor || ''; el('fator').value = iv(fatorDe(i)); }
-        $('#lQtd', root).textContent = `Quantidade (${emb})`;
-        $('#lFator', root).textContent = `Cada ${emb} vem com (${un})`;
-        $('#lPreco', root).textContent = `Preço por ${emb} (R$)`;
-        if (n === 'preco' || n === 'valor') digitou = n;
-        const p = pn(F(root, 'pacotes'));
-        if (n === 'preco' || n === 'valor' || n === 'pacotes') {
-          if (digitou === 'valor') el('preco').value = p > 0 && F(root, 'valor') ? mv(pn(F(root, 'valor')) / p) : '';
-          else el('valor').value = F(root, 'preco') ? mv(p * pn(F(root, 'preco'))) : '';
-        }
-        const q = rnd(p * pn(F(root, 'fator'))), v = pn(F(root, 'valor')) + pn(F(root, 'frete'));
-        $('#resumo', root).innerHTML = `<div><span>Entra no estoque</span><b>${fmt(q, 3)} ${esc(un)}</b></div>
-          <div><span>Total da compra</span><span>${brl(v)}</span></div>
-          <div class="b"><span>Custo por ${esc(un)}</span><span>${q > 0 ? brlU(v / q) : '—'}</span></div>
-          <div class="muted"><span>Custo médio atual</span><span>${i ? brlU(custoInsumo(i.id)) : '—'}</span></div>`;
+      let un = 'un', ultimo = i0?.id || null;
+      const achar = () => { const n = F(root, 'material').trim().toLowerCase(); return n ? db.insumos.find(i => i.nome.trim().toLowerCase() === n) : null; };
+      const upd = () => {
+        const i = achar(), nome = F(root, 'material').trim();
+        if (i && i.id !== ultimo && novo) { el('fator').value = iv(fatorDe(i)); if (!F(root, 'fornecedor')) el('fornecedor').value = i.fornecedor || ''; }
+        ultimo = i ? i.id : null;
+        const u = i ? i.unidade : un;
+        $('#matNovo', root).hidden = !!i || !nome;
+        $('#matInfo', root).innerHTML = i ? `${ic('check')} Já cadastrado${comEstoque() ? `: tem ${fmt(estoqueInsumo(i.id), 3)} ${esc(i.unidade)}` : ''} · custo médio ${brlU(custoInsumo(i.id))}`
+          : nome ? `${ic('sparkles')} Material novo: será cadastrado ao salvar.` : 'Digite o nome ou escolha um da lista.';
+        $('#unLbl', root).textContent = `(${u})`;
+        const q = rnd(pn(F(root, 'pacotes')) * pn(F(root, 'fator'))), v = pn(F(root, 'valor')) + pn(F(root, 'frete'));
+        $('#resumo', root).innerHTML = `<div><span>${comEstoque() ? 'Entra no estoque' : 'Você comprou'}</span><b>${fmt(q, 3)} ${esc(u)}</b></div>
+          <div class="b"><span>Cada ${esc(nomeUn(u))} sai por</span><span>${q > 0 && v > 0 ? brlU(v / q) : '—'}</span></div>`;
       };
+      const salvar = () => {
+        const nome = F(root, 'material').trim();
+        if (!nome) { toast('Diga qual material você comprou.'); el('material').focus(); return false; }
+        const pacotes = pn(F(root, 'pacotes')), fator = pn(F(root, 'fator')) || 1, qtd = rnd(pacotes * fator);
+        if (qtd <= 0) { toast('Informe quantos vieram.'); el('pacotes').focus(); return false; }
+        const fornecedor = F(root, 'fornecedor').trim();
+        let i = achar();
+        if (!i) { i = { id: uid(), codigo: nextCode('insumos', 'INS'), nome, unidade: un, estoqueMin: 0, fornecedor, custoManual: 0, embalagem: 'pacote', fator }; db.insumos.push(i); }
+        // qtd (na unidade de uso) e valor (total) são a base do estoque e do custo médio
+        const dados = { data: F(root, 'data') || today(), insumoId: i.id, pacotes, fator, qtd, valor: pn(F(root, 'valor')), frete: pn(F(root, 'frete')), fornecedor };
+        if (novo) { db.compras.push({ id: uid(), ...dados }); i.fator = fator; if (fornecedor && !i.fornecedor) i.fornecedor = fornecedor; }  // já vem preenchido na próxima
+        else Object.assign(c, dados);
+        return nome;
+      };
+      root._salvar = salvar;
       root.addEventListener('input', upd); root.addEventListener('change', upd);
-      if (novo) { const i = get('insumos', c.insumoId); if (i) el('fornecedor').value = i.fornecedor || ''; }
+      root.addEventListener('click', e => {
+        const ch = e.target.closest('[data-un]');
+        if (ch) { un = ch.dataset.un; $$('[data-un]', root).forEach(b => b.classList.toggle('on', b === ch)); upd(); return; }
+        if (!e.target.closest('[data-f=outra]')) return;
+        const nome = salvar(); if (!nome) return;
+        save(); salvouAlguma = true;
+        toast(`Compra de ${nome} salva. Pode lançar a próxima.`);
+        el('material').value = ''; el('pacotes').value = '1'; el('fator').value = '1'; el('valor').value = ''; el('frete').value = '';
+        $('#dlMat', root).innerHTML = insumosOrd().map(i => `<option value="${esc(i.nome)}">`).join('');
+        un = 'un'; $$('[data-un]', root).forEach((b, k) => b.classList.toggle('on', !k));
+        upd(); el('material').focus(); $('#dlgBody').scrollTop = 0;
+      });
+      // se lançou várias e fechou sem salvar a última, a tela de trás precisa se atualizar
+      dlg.addEventListener('close', () => { if (salvouAlguma) render(); }, { once: true });
       upd();
+      if (novo && !i0) el('material').focus();
     },
     onSave: root => {
-      const pacotes = pn(F(root, 'pacotes')), fator = pn(F(root, 'fator'));
-      // qtd (na unidade de uso) e valor (total) continuam sendo a base do estoque e do custo médio
-      const dados = { data: F(root, 'data') || today(), insumoId: F(root, 'insumoId'), pacotes, fator, qtd: rnd(pacotes * fator), valor: pn(F(root, 'valor')), frete: pn(F(root, 'frete')), fornecedor: F(root, 'fornecedor').trim() };
-      if (!dados.insumoId || dados.qtd <= 0) { toast('Informe o material, a quantidade e quanto vem em cada embalagem.'); return false; }
-      if (novo) {
-        db.compras.push({ id: uid(), ...dados });
-        const i = get('insumos', dados.insumoId); if (i) i.fator = fator; // já vem preenchido na próxima compra
-      } else Object.assign(c, dados);
-      toast('Compra salva — custo e estoque atualizados.');
+      if (!root._salvar()) return false;
+      toast(comEstoque() ? 'Compra salva — estoque e custo atualizados.' : 'Compra salva — custo dos terços atualizado.');
     },
     onDelete: novo ? null : () => { db.compras = db.compras.filter(x => x !== c); },
   });
@@ -1012,6 +1079,8 @@ function viewConfig() {
       <label>Impostos estimados (%)<input id="c_imp" inputmode="decimal" value="${iv(P.impostos * 100)}"></label>
       <label>Aparência<select id="c_tema">${[['auto', 'Automática (segue o sistema)'], ['light', 'Clara'], ['dark', 'Escura']].map(([v, l]) => `<option value="${v}" ${v === th ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>
+    <label class="chk" style="margin:4px 0 6px"><input type="checkbox" id="c_estoque" ${comEstoque() ? 'checked' : ''}>Controlar estoque (terços prontos, materiais, produção e avisos de mínimo)</label>
+    <p class="hint" style="margin:0 0 4px">Desligado, o app cuida só de custos, preços, vendas e divulgação.</p>
     <div class="sec">Formas de pagamento · nome e taxa (%)</div>
     <div id="pags">${db.pagamentos.map(p => `<div class="g2 pag"><input class="pn" value="${esc(p.nome)}" aria-label="Nome"><input class="pt" inputmode="decimal" value="${iv(p.taxa * 100)}" aria-label="Taxa %"></div>`).join('')}</div>
     <button class="btn sm" data-act="addPag" style="margin-top:8px">${ic('plus')}Forma de pagamento</button>
@@ -1026,7 +1095,7 @@ function viewBackup() {
     <p class="hint" style="margin:0 0 14px">Os dados ficam guardados neste navegador, neste computador. Baixe o backup toda semana e guarde no OneDrive: se limpar o navegador ou trocar de computador, é só restaurar. O backup inclui as fotos da galeria.</p>
     <div class="bar"><button class="btn pri" data-act="exportJson">${ic('download')}Baixar backup</button><button class="btn" data-act="importJson">${ic('upload')}Restaurar backup…</button></div></div>
   <div class="card"><div class="card-h">${ic('sheet')}<h3>Exportar para Excel</h3></div>
-    <div class="bar"><button class="btn" data-act="csvVendas">${ic('bag')}Vendas</button><button class="btn" data-act="csvEstoque">${ic('box')}Estoque</button><button class="btn" data-act="csvProdutos">${ic('tag')}Produtos e preços</button></div></div>
+    <div class="bar"><button class="btn" data-act="csvVendas">${ic('bag')}Vendas</button>${comEstoque() ? `<button class="btn" data-act="csvEstoque">${ic('box')}Estoque</button>` : ''}<button class="btn" data-act="csvProdutos">${ic('tag')}Produtos e preços</button></div></div>
   <div class="card"><div class="card-h">${ic('refresh')}<h3>Recomeçar</h3></div>
     <p class="hint" style="margin:0 0 14px">Apaga tudo e volta aos dados iniciais da planilha. Faça um backup antes.</p>
     <button class="btn danger" data-act="reset">${ic('trash')}Apagar tudo e recomeçar</button></div>`;
@@ -1071,12 +1140,12 @@ const ACTIONS = {
   editProduto: id => formProduto(get('produtos', id)),
   novoInsumo: () => formInsumo(),
   editInsumo: id => formInsumo(get('insumos', id)),
-  novaCompra: id => db.insumos.length ? formCompra(null, id) : toast('Cadastre um insumo primeiro.'),
+  novaCompra: id => formCompra(null, id),   // material novo é cadastrado na própria compra
   editCompra: id => formCompra(get('compras', id)),
   // celular: o botão "+" abre os lançamentos do dia a dia
   lancar: () => modal({
     title: 'O que você quer lançar?',
-    body: `<div class="quick">${[['novaVenda', 'bag', 't-pri', 'Venda', 'Vendi um terço'], ['novaProducao', 'sparkles', 't-gold', 'Produção', 'Fiz terços novos'], ['novaCompra', 'cart', 't-blue', 'Compra de material', 'Comprei contas, fio, cruz…']]
+    body: `<div class="quick">${[['novaVenda', 'bag', 't-pri', 'Venda', 'Vendi um terço'], ...(comEstoque() ? [['novaProducao', 'sparkles', 't-gold', 'Produção', 'Fiz terços novos']] : []), ['novaCompra', 'cart', 't-blue', 'Compra de material', 'Comprei contas, fio, cruz…']]
       .map(([a, i, t, n, d]) => `<button type="button" class="tile" data-f="${a}"><div class="kpi-ic ${t}">${ic(i)}</div><div class="grow"><b>${n}</b><span>${d}</span></div>${ic('chevron')}</button>`).join('')}</div>`,
     onOpen: root => root.addEventListener('click', e => { const t = e.target.closest('[data-f]'); if (t) { dlg.close(); ACTIONS[t.dataset.f](); } }),
   }),
@@ -1091,6 +1160,7 @@ const ACTIONS = {
     P.perdas = pn($('#c_perdas').value) / 100;
     P.impostos = pn($('#c_imp').value) / 100;
     db.pagamentos = $$('.pag').map(r => ({ nome: $('.pn', r).value.trim(), taxa: pn($('.pt', r).value) / 100 })).filter(p => p.nome);
+    P.estoque = $('#c_estoque').checked;
     setTheme($('#c_tema').value);
     if (P.margem + P.impostos + taxaRef() >= 1) toast('Atenção: margem + taxas + impostos passam de 100%.');
     else toast('Configurações salvas.');
