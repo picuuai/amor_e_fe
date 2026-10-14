@@ -793,7 +793,7 @@ function formProduto(p) {
           ${preco > 0 ? `<div class="b"><span>Lucro por terço</span><span class="${i.margem < db.params.margem ? 'neg' : 'pos'}">${brl(i.lucro)} · ${pct(i.margem)}</span></div>` : ''}`;
         root._sug = Math.ceil(i.sugerido);
       };
-      root.addEventListener('input', upd);
+      root.addEventListener('input', e => { if (e.target.name === 'qtd') e.target.dataset.auto = ''; upd(); });
       root.addEventListener('change', async e => {
         const t = e.target;
         if (t.name === 'fotoFile') {
@@ -813,6 +813,11 @@ function formProduto(p) {
           if (nome && !i) { i = { id: uid(), codigo: nextCode('insumos', 'INS'), nome, unidade: 'un', estoqueMin: 0, fornecedor: '', custoManual: 0, embalagem: 'pacote', fator: 1 }; db.insumos.push(i); save(); toast(`“${nome}” cadastrado. Registre a compra dele depois, em Materiais.`); }
           // refaz as listas (o material novo aparece em todas as linhas)
           for (const s of $$('#ficha [name=insumoId]', root)) { const v = s === t ? (i ? i.id : '') : s.value; s.innerHTML = optsMateriais(v); }
+        }
+        // quantidade padrão do material: preenche se a quantidade estiver vazia ou se foi o app que preencheu
+        if (t.name === 'insumoId') {
+          const q = t.closest('.row').querySelector('[name=qtd]'), pad = +get('insumos', t.value)?.qtdPadrao || 0;
+          if (!q.value.trim() || q.dataset.auto) { q.value = pad ? iv(pad) : ''; q.dataset.auto = pad ? '1' : ''; }
         }
         upd();
       });
@@ -896,6 +901,8 @@ function formInsumo(i) {
       <label>Nome<input name="nome" value="${esc(i.nome)}"></label>
       <div class="sec" style="margin-top:4px">Como você conta este material</div>
       <div class="chips" id="unChips">${uns.map(([v, l]) => `<button type="button" class="chip ${v === i.unidade ? 'on' : ''}" data-un="${esc(v)}">${esc(l)}</button>`).join('')}</div>
+      <label>Quanto vai em 1 terço, normalmente <span id="unPad"></span><input name="qtdPadrao" inputmode="decimal" placeholder="Ex.: 53" value="${i.qtdPadrao ? iv(i.qtdPadrao) : ''}"></label>
+      <p class="hint" style="margin:-6px 0 12px">Ao escolher este material num terço, a quantidade já vem preenchida com esse número (dá para mudar).</p>
       ${comEstoque() ? `<label>Avisar quando tiver menos de <span id="unMin"></span><input name="estoqueMin" inputmode="decimal" value="${iv(i.estoqueMin)}"></label>` : ''}
       ${novo ? '' : `<div class="sum">${comEstoque() ? `<div><span>Em estoque</span><b>${fmt(estoqueInsumo(i.id), 3)} ${esc(i.unidade)}</b></div>` : ''}
         <div class="b" ${comEstoque() ? '' : 'style="border:0;margin:0;padding-top:3px"'}><span>Custo médio</span><span>${brlU(custoInsumo(i.id))} cada</span></div></div>
@@ -909,7 +916,7 @@ function formInsumo(i) {
       </details>`,
     onOpen: root => {
       let un = i.unidade;
-      const upd = () => { const m = $('#unMin', root); if (m) m.textContent = `(${un})`; };
+      const upd = () => { const m = $('#unMin', root); if (m) m.textContent = `(${un})`; $('#unPad', root).textContent = `(${nomeUn(un)})`; };
       root._un = () => un;
       root.addEventListener('click', e => {
         const ch = e.target.closest('[data-un]');
@@ -924,7 +931,7 @@ function formInsumo(i) {
       const nome = F(root, 'nome').trim();
       if (!nome) { toast('Informe o nome do material.'); return false; }
       if (db.insumos.some(x => x !== i && x.nome.trim().toLowerCase() === nome.toLowerCase())) { toast('Já existe um material com esse nome.'); return false; }
-      const dados = { nome, unidade: root._un(), estoqueMin: root.querySelector('[name=estoqueMin]') ? pn(F(root, 'estoqueMin')) : i.estoqueMin, fornecedor: F(root, 'fornecedor').trim() };
+      const dados = { nome, unidade: root._un(), qtdPadrao: pn(F(root, 'qtdPadrao')), estoqueMin: root.querySelector('[name=estoqueMin]') ? pn(F(root, 'estoqueMin')) : i.estoqueMin, fornecedor: F(root, 'fornecedor').trim() };
       if (root.querySelector('[name=custoManual]')) dados.custoManual = pn(F(root, 'custoManual'));
       if (novo) db.insumos.push({ id: uid(), ...i, ...dados }); else Object.assign(i, dados);
     },
