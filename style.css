@@ -222,6 +222,8 @@ textarea{min-height:70px;resize:vertical}
 .rows.ficha:empty::before{content:"Nenhum material — adicione abaixo."}
 .rm{display:grid;place-items:center;border:0;background:none;color:var(--bad);cursor:pointer;padding:6px;border-radius:8px}
 .rm:hover{background:var(--bad-bg)}
+.rm.add{background:var(--pri);color:#fff;border-radius:10px;height:36px}
+.rm.add:hover{background:var(--pri);filter:brightness(1.1)}
 .sum{background:var(--soft);border-radius:14px;padding:12px 16px;margin-top:12px}
 .sum>div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
 .sum .b{font-weight:800;border-top:1px solid var(--line);margin-top:4px;padding-top:8px}

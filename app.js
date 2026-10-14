@@ -733,12 +733,16 @@ function viewProdutos() {
   ${ps.length ? '' : empty('tag', 'Nenhum terço cadastrado', 'Toque em “Novo terço” para cadastrar o primeiro.')}`;
 }
 const optsMateriais = sel => `<option value="">Material…</option>${opts(insumosOrd(), sel)}<option value="__novo">+ Cadastrar material novo…</option>`;
-function fichaRow(f = {}) {
+// a última linha fica sempre em branco, com o botão "+": ao tocar, ela vira uma linha com lixeira e abre outra abaixo
+const fichaBtn = ultima => ultima ? `<button type="button" class="rm add" data-f="add" aria-label="Adicionar material">${ic('plus')}</button>`
+  : `<button type="button" class="rm" data-f="rm" aria-label="Remover">${ic('trash')}</button>`;
+const fichaRows = ficha => ficha.map(f => fichaRow(f)).join('') + fichaRow({}, true);
+function fichaRow(f = {}, ultima = false) {
   return `<div class="row">
     <select name="insumoId" aria-label="Material">${optsMateriais(f.insumoId)}</select>
     <input name="qtd" inputmode="decimal" placeholder="Qtd" aria-label="Quantidade" value="${iv(f.qtd ?? '')}">
     <span class="unit"></span>
-    <button type="button" class="rm" data-f="rm" aria-label="Remover">${ic('trash')}</button></div>`;
+    ${fichaBtn(ultima)}</div>`;
 }
 // Cadastro de terço: só foto, nome, preço e materiais. Código é automático; tempo e mínimo ficam em "Mais opções".
 function formProduto(p) {
@@ -763,8 +767,7 @@ function formProduto(p) {
       </div>
       <div class="sec">Materiais usados em 1 terço</div>
       ${outros.length ? `<label>Copiar os materiais de outro terço<select name="copiar"><option value="">Escolher…</option>${opts(outros, '')}</select></label>` : ''}
-      <div class="rows ficha" id="ficha">${p.ficha.map(fichaRow).join('')}</div>
-      <button type="button" class="btn sm" data-f="add">${ic('plus')}Material</button>
+      <div class="rows ficha" id="ficha">${fichaRows(p.ficha)}</div>
       <div class="sum" id="resumo"></div>
       <details class="mais"><summary>Mais opções</summary>
         <div class="g2">
@@ -802,7 +805,7 @@ function formProduto(p) {
         if (t.name === 'copiar' && t.value) {
           const o = get('produtos', t.value); t.value = '';
           if (read().length && !confirm(`Trocar os materiais atuais pelos do “${o.nome}”?`)) return;
-          $('#ficha', root).innerHTML = o.ficha.map(fichaRow).join('');
+          $('#ficha', root).innerHTML = fichaRows(o.ficha);
         }
         if (t.name === 'insumoId' && t.value === '__novo') {
           const nome = (prompt('Nome do material novo (ex.: Conta de vidro 8 mm):') || '').trim();
@@ -813,10 +816,22 @@ function formProduto(p) {
         }
         upd();
       });
+      // Enter na quantidade = tocar no "+"
+      root.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' || e.target.name !== 'qtd' || !e.target.closest('#ficha')) return;
+        e.preventDefault(); e.target.closest('.row').querySelector('[data-f=add]')?.click();
+      });
       root.addEventListener('click', e => {
         const t = e.target.closest('[data-f]'); if (!t) return;
         const f = t.dataset.f;
-        if (f === 'add') { $('#ficha', root).insertAdjacentHTML('beforeend', fichaRow()); upd(); }
+        if (f === 'add') {
+          const r = t.closest('.row'), id = F(r, 'insumoId');
+          if (!id || id === '__novo') { toast('Escolha o material.'); r.querySelector('[name=insumoId]').focus(); return; }
+          if (!(pn(F(r, 'qtd')) > 0)) { toast('Informe a quantidade.'); r.querySelector('[name=qtd]').focus(); return; }
+          t.outerHTML = fichaBtn(false);
+          $('#ficha', root).insertAdjacentHTML('beforeend', fichaRow({}, true));
+          $('#ficha .row:last-child [name=insumoId]', root).focus(); upd();
+        }
         if (f === 'rm') { t.closest('.row').remove(); upd(); }
         if (f === 'usar') { root.querySelector('[name=preco]').value = mv(root._sug); upd(); }
         if (f === 'semFoto') { root._foto = ''; $('#fotoPrev', root).innerHTML = foto({ id: p.id }); }
