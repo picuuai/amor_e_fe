@@ -8,7 +8,8 @@ const ESTILOS = { original: ['Foto original', 'linear-gradient(135deg,#caa,#8a7a
 const SELOS = ['', 'Pronta entrega', 'Novo', 'Últimas unidades', 'Personalizado', 'Sob encomenda', 'Promoção'];
 
 const studio = {
-  textosFoto: true, legendaTipo: 'instagram', prodId: null, fotoId: null, src: null, srcId: 0, fromFile: false, formato: null, estilo: null,
+  // modelo Foto original: o que aparece sobre a foto (o preço usa mostrarPreco, o mesmo dos outros modelos)
+  fotoNome: true, fotoContatos: true, fotoLoja: true, legendaTipo: 'instagram', prodId: null, fotoId: null, src: null, srcId: 0, fromFile: false, formato: null, estilo: null,
   auto: true, intens: 60, brilho: 0, contraste: 0, saturacao: 0, calor: 0, zoom: 100, px: 0, py: 0,
   titulo: '', preco: 0, mostrarPreco: true, selo: 'Pronta entrega', legenda: '', legendaEditada: false,
   _tituloDe: null, _proc: null, _procKey: '',
@@ -214,23 +215,27 @@ const TEMPLATES = {
     const s = studio, c = divCfg();
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
     photo(g, img, 0, 0, W, H, null, false);
-    if (!s.textosFoto) return;
     const u = Math.min(W, H * 1.1) / 1080;   // fotos deitadas (mais baixas) usam letras menores
-    const fh = H * 0.5, fb = g.createLinearGradient(0, H - fh, 0, H);
-    fb.addColorStop(0, 'rgba(0,0,0,0)'); fb.addColorStop(0.5, 'rgba(0,0,0,.5)'); fb.addColorStop(1, 'rgba(0,0,0,.78)');
-    g.fillStyle = fb; g.fillRect(0, H - fh, W, fh);
-    const ft = g.createLinearGradient(0, 0, 0, 150 * u);
-    ft.addColorStop(0, 'rgba(0,0,0,.45)'); ft.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = ft; g.fillRect(0, 0, W, 150 * u);
+    const temPreco = s.mostrarPreco && s.preco > 0, cta = s.fotoContatos ? [c.cta, contatos()].filter(Boolean) : [];
+    const loja = s.fotoLoja && db.params.nome, embaixo = (s.fotoNome && (s.titulo || c.frase)) || temPreco || cta.length;
+    if (embaixo) {   // faixa escura só onde tem texto
+      const fh = H * (s.fotoNome ? 0.5 : 0.3), fb = g.createLinearGradient(0, H - fh, 0, H);
+      fb.addColorStop(0, 'rgba(0,0,0,0)'); fb.addColorStop(0.5, 'rgba(0,0,0,.5)'); fb.addColorStop(1, 'rgba(0,0,0,.78)');
+      g.fillStyle = fb; g.fillRect(0, H - fh, W, fh);
+    }
+    if (loja || s.selo) {
+      const ft = g.createLinearGradient(0, 0, 0, 150 * u);
+      ft.addColorStop(0, 'rgba(0,0,0,.45)'); ft.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = ft; g.fillRect(0, 0, W, 150 * u);
+    }
     g.save();
     g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 10 * u;
     g.fillStyle = '#fff'; font(g, 700, 24 * u); g.textBaseline = 'middle';
-    spaced(g, (db.params.nome || '').toUpperCase(), W / 2, 50 * u, 7 * u);
+    if (loja) spaced(g, db.params.nome.toUpperCase(), W / 2, 50 * u, 7 * u);
     if (s.selo) { font(g, 800, 24 * u); pill(g, s.selo.toUpperCase(), SEG * u, 88 * u, 54 * u, '#f1c75b', '#3b2a1a', 'left', 22 * u); }
     const X = SEG * u, maxW = W - 2 * SEG * u, items = [];
-    items.push(tItem(g, s.titulo, maxW, 64 * u, 34 * u, 2, sz => font(g, 700, sz, 'Playfair Display'), '#fff', 'left', X));
-    if (c.frase) items.push(tItem(g, c.frase, maxW, 30 * u, 20 * u, 1, sz => font(g, 500, sz, 'Playfair Display', 'italic'), 'rgba(255,255,255,.9)', 'left', X));
-    const temPreco = s.mostrarPreco && s.preco > 0, cta = [c.cta, contatos()].filter(Boolean);
+    if (s.fotoNome && s.titulo) items.push(tItem(g, s.titulo, maxW, 64 * u, 34 * u, 2, sz => font(g, 700, sz, 'Playfair Display'), '#fff', 'left', X));
+    if (s.fotoNome && c.frase) items.push(tItem(g, c.frase, maxW, 30 * u, 20 * u, 1, sz => font(g, 500, sz, 'Playfair Display', 'italic'), 'rgba(255,255,255,.9)', 'left', X));
     if (temPreco || cta.length) items.push({
       h: 66 * u, draw: y0 => {
         let pw = 0;
@@ -468,7 +473,8 @@ function viewDivulgar() {
       <div class="card c-modelo"><div class="card-h">${ic('sparkles')}<h3>2. Modelo</h3></div>
         ${chips('estilo', ESTILOS, true)}
         ${chips('formato', FORMATOS, false)}
-        <label class="chk" id="optTextos" ${s.estilo === 'original' ? '' : 'hidden'}><input type="checkbox" name="textosFoto" ${s.textosFoto ? 'checked' : ''}>Mostrar nome, preço e contatos sobre a foto</label>
+        <div id="optTextos" ${s.estilo === 'original' ? '' : 'hidden'}><div class="sec" style="margin-top:4px">Mostrar sobre a foto</div>
+          <div class="g2 st-sobre">${[['fotoNome', 'Nome do terço e frase'], ['mostrarPreco', 'Preço'], ['fotoContatos', 'Contatos e chamada'], ['fotoLoja', 'Nome da loja']].map(([n, l]) => `<label class="chk"><input type="checkbox" name="${n}" ${s[n] ? 'checked' : ''}>${l}</label>`).join('')}</div></div>
         <label class="chk"><input type="checkbox" name="guiaGrade" ${s.guiaGrade ? 'checked' : ''}>Mostrar o corte da grade do perfil (só na prévia)</label>
       </div>
       <div class="card"><div class="card-h">${ic('tag')}<h3>3. Textos</h3></div>
@@ -526,10 +532,10 @@ async function initStudio() {
       if (nova) { await srcFromGaleria(nova.id); toast('Foto adicionada à galeria.'); }
       refreshStrip(); srcLabel(); redraw();
     } else if (n === 'auto') { s.auto = t.checked; redraw(); }
-    else if (n === 'textosFoto') { s.textosFoto = t.checked; redraw(); }
+    else if (n === 'fotoNome' || n === 'fotoContatos' || n === 'fotoLoja') { s[n] = t.checked; redraw(); }
     else if (n === 'legendaJunto') { c.legendaJunto = t.checked; }
     else if (n === 'guiaGrade') { s.guiaGrade = t.checked; redraw(); }
-    else if (n === 'mostrarPreco') { s.mostrarPreco = t.checked; setLeg(); redraw(); }
+    else if (n === 'mostrarPreco') { s.mostrarPreco = t.checked; $$('[name=mostrarPreco]', root).forEach(x => x.checked = t.checked); setLeg(); redraw(); }
     else if (n === 'selo') { s.selo = t.value; setLeg(); redraw(); }
     save(); // guarda frase, chamada e contatos
   });
