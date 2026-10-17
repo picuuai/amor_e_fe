@@ -875,17 +875,17 @@ const UNIDADES = [['un', 'Unidade', 'contas, cruzes, medalhas…'], ['m', 'Metro
 const nomeUn = u => u === 'un' ? 'unidade' : u === 'm' ? 'metro' : u === 'g' ? 'grama' : u;
 
 function viewInsumos() {
-  topActions(`<a class="btn" href="#compras">${ic('receipt')}Compras feitas</a><button class="btn pri" data-act="novaCompra">${ic('cart')}Comprei material</button>`);
+  topActions(`<a class="btn" href="#compras" aria-label="Compras feitas">${ic('receipt')}<span class="hide-sm">Compras feitas</span></a><button class="btn" data-act="novoInsumo">${ic('plus')}Novo material</button><button class="btn pri" data-act="novaCompra">${ic('cart')}Comprei material</button>`);
   const ins = insumosOrd();
   return `<div class="list">${ins.map(i => {
     const est = comEstoque(), e = estoqueInsumo(i.id), low = est && (e < 0 || (i.estoqueMin > 0 && e <= i.estoqueMin)), n = db.compras.filter(c => c.insumoId === i.id).length;
     return `<div class="li li-split">
       <button class="li-open" data-act="editInsumo" data-id="${i.id}"><div class="av ${low ? 't-warn' : 't-gold'}">${ic('layers')}</div>
         <div class="li-main"><div class="li-t">${esc(i.nome)}</div>
-        <div class="li-s">${est ? `tem <b class="${low ? 'neg' : ''}">${fmt(e, 3)} ${esc(i.unidade)}</b> · ` : ''}${brlU(custoInsumo(i.id))} cada ${esc(nomeUn(i.unidade))}${est ? (low ? ' · <span class="neg">acabando</span>' : '') : ` · ${n} compra(s)`}</div></div></button>
+        <div class="li-s">${est ? `tem <b class="${low ? 'neg' : ''}">${fmt(e, 3)} ${esc(i.unidade)}</b> · ` : ''}${brlU(custoInsumo(i.id))} cada ${esc(nomeUn(i.unidade))}${i.qtdPadrao > 0 ? ` · ${fmt(i.qtdPadrao, 3)} por terço` : ''}${est ? (low ? ' · <span class="neg">acabando</span>' : '') : ` · ${n} compra(s)`}</div></div></button>
       <button class="btn sm" data-act="novaCompra" data-id="${i.id}" aria-label="Registrar compra de ${esc(i.nome)}">${ic('cart')}<span class="hide-sm">Comprar</span></button>
     </div>`;
-  }).join('') || empty('layers', 'Nenhum material ainda', 'Toque em “Comprei material”: o material é cadastrado junto com a primeira compra.')}</div>
+  }).join('') || empty('layers', 'Nenhum material ainda', 'Toque em “Novo material” para cadastrar, ou em “Comprei material” para cadastrar junto com a compra.')}</div>
   ${ins.length ? '<p class="hint">Toque no material para ver e corrigir as compras. O custo é a média do que você pagou.</p>' : ''}`;
 }
 
@@ -903,6 +903,7 @@ function formInsumo(i) {
       <div class="chips" id="unChips">${uns.map(([v, l]) => `<button type="button" class="chip ${v === i.unidade ? 'on' : ''}" data-un="${esc(v)}">${esc(l)}</button>`).join('')}</div>
       <label>Quanto vai em 1 terço, normalmente <span id="unPad"></span><input name="qtdPadrao" inputmode="decimal" placeholder="Ex.: 53" value="${i.qtdPadrao ? iv(i.qtdPadrao) : ''}"></label>
       <p class="hint" style="margin:-6px 0 12px">Ao escolher este material num terço, a quantidade já vem preenchida com esse número (dá para mudar).</p>
+      ${compras.length ? '' : `<label>Quanto custa cada um, mais ou menos (R$) — até você lançar a primeira compra<input name="custoManual" inputmode="decimal" placeholder="Ex.: 0,05" value="${i.custoManual ? iv(i.custoManual) : ''}"></label>`}
       ${comEstoque() ? `<label>Avisar quando tiver menos de <span id="unMin"></span><input name="estoqueMin" inputmode="decimal" value="${iv(i.estoqueMin)}"></label>` : ''}
       ${novo ? '' : `<div class="sum">${comEstoque() ? `<div><span>Em estoque</span><b>${fmt(estoqueInsumo(i.id), 3)} ${esc(i.unidade)}</b></div>` : ''}
         <div class="b" ${comEstoque() ? '' : 'style="border:0;margin:0;padding-top:3px"'}><span>Custo médio</span><span>${brlU(custoInsumo(i.id))} cada</span></div></div>
@@ -912,7 +913,6 @@ function formInsumo(i) {
         <div class="li-r"><div class="li-v">${brl(+c.valor + +c.frete)}</div></div></button>`).join('')}</div>` : ''}
       <details class="mais"><summary>Mais opções</summary>
         <label>Fornecedor<input name="fornecedor" value="${esc(i.fornecedor)}"></label>
-        ${compras.length ? '' : `<label>Custo estimado de cada um (enquanto não registrar uma compra)<input name="custoManual" inputmode="decimal" placeholder="Ex.: 0,015" value="${iv(i.custoManual)}"></label>`}
       </details>`,
     onOpen: root => {
       let un = i.unidade;
