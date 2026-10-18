@@ -324,7 +324,14 @@ const ROUTES = {
 };
 const state = { mesInicio: today().slice(0, 7), mesVendas: today().slice(0, 7), filtroVendas: 'todas' };
 
+// troca de número da loja (18/10/2026): o WhatsApp antigo vira o novo em todos os aparelhos ao abrir o app
+const TEL_LOJA = '(35) 991035730', TEL_ANTIGOS = ['35991051736'];
+function trocaTelefone() {
+  const d = db.params.divulgar;
+  if (d && TEL_ANTIGOS.includes(String(d.whatsapp || '').replace(/\D/g, '').replace(/^55(?=\d{11}$)/, ''))) { d.whatsapp = TEL_LOJA; save(); }
+}
 function render() {
+  trocaTelefone();
   // aparelho não autorizado: só a tela de bloqueio, nada dos dados
   const bloqueado = typeof Sync !== 'undefined' && Sync.bloqueado();
   document.body.classList.toggle('locked', bloqueado);
