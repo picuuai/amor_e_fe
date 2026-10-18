@@ -16,7 +16,9 @@ const studio = {
 };
 const INSTAGRAM_PADRAO = '@tercos.de.amor.e.fe';
 const divCfg = () => {
-  const d = (db.params.divulgar ||= { frase: 'Feito à mão com amor e fé', cta: 'Encomende pelo WhatsApp', whatsapp: '', instagram: '', estilo: 'elegante', formato: 'retrato' });
+  const pad = { frase: 'Feito à mão com amor e fé', cta: 'Encomende pelo WhatsApp', whatsapp: '', instagram: '', estilo: 'elegante', formato: 'retrato' };
+  const d = (db.params.divulgar ||= { ...pad });
+  for (const k in pad) d[k] ??= pad[k];   // configuração incompleta não pode quebrar o desenho nem a legenda
   if (!d.instagram) d.instagram = INSTAGRAM_PADRAO;
   return d;
 };
@@ -739,11 +741,43 @@ function oferecerMarcar() {
   if (f && f.status !== 'publicada') setPub(`${ic('instagram')}<div>Já postou? <button type="button" class="btn sm" data-s="marcarPub">Marcar foto como publicada</button></div>`);
 }
 
+// O Instagram no computador não posta Stories: no formato 9:16 o post vira um Reel de 10 s
+// (a imagem com uma entrada suave e a música instrumental do app, a mesma da Oração do dia)
+const REEL_DUR = 10;
+const reelMime = () => (typeof orMime === 'function' ? orMime() : null);
+function gravarReel(cv) {
+  const mime = reelMime(), W = cv.width, H = cv.height, v = document.createElement('canvas');
+  v.width = W; v.height = H;
+  const g = v.getContext('2d'), foto = document.createElement('canvas');
+  foto.width = W; foto.height = H; foto.getContext('2d').drawImage(cv, 0, 0);
+  const quadro = t => { g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.globalAlpha = Math.min(1, t / 0.7); g.drawImage(foto, 0, 0); };
+  const AC = window.AudioContext || window.webkitAudioContext, trilha = (typeof orCfg === 'function' && orCfg().trilha) || 'serena';
+  let ctx = null, dest = null;
+  if (AC && typeof montarTrilha === 'function' && trilha !== 'nenhuma') { ctx = new AC(); ctx.resume?.(); dest = ctx.createMediaStreamDestination(); montarTrilha(ctx, trilha, REEL_DUR).connect(dest); }
+  quadro(0);
+  const stream = v.captureStream(30); dest?.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5e6, audioBitsPerSecond: 160000 }), pedacos = [];
+  rec.ondataavailable = e => e.data.size && pedacos.push(e.data);
+  return new Promise(fim => {
+    rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); ctx?.close().catch(() => { }); fim(new Blob(pedacos, { type: mime.split(';')[0] })); };
+    rec.start(500);
+    const ini = performance.now();
+    const passo = () => {
+      const t = (performance.now() - ini) / 1000;
+      quadro(Math.min(t, REEL_DUR));
+      if (t < REEL_DUR) setTimeout(passo, 33); else rec.stop();   // relógio próprio: segue mesmo com a janela atrás de outra
+    };
+    passo();
+  });
+}
+const blobDataURL = b => new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => err(new Error('não consegui ler o vídeo')); fr.readAsDataURL(b); });
+
 async function publicarInstagram(cv, btn) {
   const s = studio;
   // no celular o próprio app do Instagram recebe a imagem pela janela de compartilhar
   if (matchMedia('(pointer: coarse)').matches) { if (await compartilharPost(cv)) registrarCompartilhado(); else oferecerMarcar(); return; }
-  if (s.formato === 'story') { toast('Stories só podem ser publicados pelo celular. Use “Compartilhar” ou “Baixar”.'); return; }
+  const reel = s.formato === 'story';
+  if (reel && !reelMime()?.startsWith('video/mp4')) { toast('Este navegador não grava vídeo em .mp4 — use o Chrome ou o Edge para publicar o Reel.'); return; }
   const st = await postadorStatus();
   if (!st || st.logado === false) {
     modal({
@@ -756,20 +790,28 @@ async function publicarInstagram(cv, btn) {
     return;
   }
   if (st.ocupado === 'login') { toast('Termine o login na janela do Instagram primeiro.'); return; }
-  if (!confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\n“${s.titulo}” — modelo ${ESTILOS[s.estilo][0]}, ${FORMATOS[s.formato][2]}.`)) return;
+  if (!confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\n“${s.titulo}” — modelo ${ESTILOS[s.estilo][0]}, ${reel ? `Reel de ${REEL_DUR} s com música (o Instagram no computador não posta Stories)` : FORMATOS[s.formato][2]}.`)) return;
   btn.disabled = true;
   try {
+    let midia;
+    if (reel) {
+      setPub(`${ic('refresh')}<div>Gravando o Reel (${REEL_DUR} s). Deixe esta tela aberta e visível até terminar.</div>`);
+      const blob = await gravarReel(cv);
+      if (!blob?.size) throw new Error('não consegui gravar o vídeo');
+      midia = { video: await blobDataURL(blob) };
+      setPub(`${ic('refresh')}<div>Enviando o vídeo para o postador…</div>`);
+    } else midia = { imagem: cv.toDataURL('image/jpeg', 0.92) };
     const r = await fetch(POSTADOR + '/publicar', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imagem: cv.toDataURL('image/jpeg', 0.92), legenda: s.legenda, formato: s.formato, titulo: s.titulo, oculto: true }),
+      body: JSON.stringify({ ...midia, legenda: s.legenda, formato: s.formato, titulo: s.titulo, oculto: true }),
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.erro || 'o postador recusou o pedido');
     const reg = { id: uid(), data: today(), produtoId: s.prodId, fotoId: s.fotoId, titulo: s.titulo, estilo: s.estilo, status: 'enviado' };
     (db.posts ||= []).push(reg); save();
-    setPub(`${ic('refresh')}<div>Publicando em segundo plano. Pode continuar usando o app — o Windows avisa quando terminar.</div>`);
+    setPub(`${ic('refresh')}<div>Publicando em segundo plano${reel ? ' (vídeo demora alguns minutos para subir)' : ''}. Pode continuar usando o app — o Windows avisa quando terminar.</div>`);
     toast('Enviado! Você será avisado quando for publicado.');
-    const fim = Date.now() + 5 * 60e3;
+    const fim = Date.now() + (reel ? 12 : 5) * 60e3;
     while (Date.now() < fim) {
       await new Promise(ok => setTimeout(ok, 3000));
       let job; try { job = await (await fetch(`${POSTADOR}/job/${j.job}`)).json(); } catch { continue; }

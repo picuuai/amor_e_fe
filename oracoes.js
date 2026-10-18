@@ -606,7 +606,7 @@ function viewOracoes() {
       <div class="st-actions">
         ${noCelular()
           ? `<button class="btn pri" data-o="share">${ic('share')}Postar imagem</button>`
-          : `<button class="btn pri" data-o="publicar">${ic('instagram')}Publicar imagem</button>`}
+          : `<button class="btn pri" data-o="publicar">${ic('instagram')}${s.formato === 'story' ? 'Publicar Reel' : 'Publicar imagem'}</button>`}
         <button class="btn" data-o="video" ${video ? '' : 'disabled'} title="Gravar o vídeo com a música">${ic('video')}<span>Vídeo com música</span></button>
         <button class="btn" data-o="download" title="Baixar imagem">${ic('download')}<span>Baixar imagem</span></button>
         <button class="btn" data-o="copy" title="Copiar legenda">${ic('copy')}<span>Copiar legenda</span></button>
@@ -718,7 +718,7 @@ function initOracoes() {
       s[k] = c[k] = chip.dataset.v;
       $$(`.chip[data-k="${k}"]`, root).forEach(b => b.classList.toggle('on', b === chip));
       save();
-      if (k === 'voz' || k === 'estilo') { render(); return; }   // mostra ou esconde o gravador / a escolha da pintura
+      if (k === 'voz' || k === 'estilo' || k === 'formato') { render(); return; }   // gravador, pintura ou o nome do botão de publicar   // mostra ou esconde o gravador / a escolha da pintura
       redraw(); return;
     }
     const b = e.target.closest('[data-o]'); if (!b) return;
@@ -748,6 +748,7 @@ function initOracoes() {
       setPub(`${ic('refresh')}<div>Gravando o vídeo (${s._durAnim} s${voz ? ', com a voz' : ''}). Deixe esta tela aberta e visível até terminar.</div>`);
       const blob = await gravacao;
       delete b.dataset.gravando; b.innerHTML = `${ic('video')}<span>Vídeo com música</span>`; prog(null);
+      const depois = s._pubDepois; s._pubDepois = false;
       if (!blob) { setPub(''); return; }
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
       if (s._video) URL.revokeObjectURL(s._video.url);
@@ -760,6 +761,7 @@ function initOracoes() {
           ? `<button type="button" class="btn sm pri" data-o="shareVideo">${ic('share')}Postar vídeo</button>`
           : `<button type="button" class="btn sm pri" data-o="pubVideo" ${ext === 'mp4' ? '' : 'disabled'}>${ic('instagram')}Publicar Reel</button>`}
           <button type="button" class="btn sm" data-o="baixarVideo">${ic('download')}Baixar vídeo</button></div></div>`, 'ok');
+      if (depois && ext === 'mp4') orPublicar(cv, b, s._video, true);   // veio do "Publicar Reel": publica assim que terminar
     }
     if (a === 'baixarVideo' && s._video) {
       const copiou = await orCopiar(true);
@@ -806,16 +808,25 @@ async function orCompartilhar(file, tipo) {
   return false;
 }
 // publica pelo postador: a imagem do cartão ou, com "video", o Reel gravado
-async function orPublicar(cv, btn, video) {
+async function orPublicar(cv, btn, video, jaConfirmado) {
   const s = orac, o = oracaoAtual();
-  if (!video && s.formato === 'story') { toast('O formato 9:16 é para Reels/Stories: grave o “Vídeo com música” ou escolha Feed 4:5 para publicar a imagem.'); return; }
+  // 9:16 no computador vira Reel: usa o vídeo já gravado ou grava agora e publica quando terminar
+  if (!video && s.formato === 'story') {
+    if (s._video?.ext === 'mp4') video = s._video;
+    else {
+      const bv = $('[data-o=video]');
+      if (!orMime()?.startsWith('video/mp4') || !bv) { toast('Este navegador não grava vídeo em .mp4 — use o Chrome ou o Edge para publicar o Reel.'); return; }
+      if (!confirm(`Publicar como Reel?\n\nO app grava agora o vídeo de ${s.dur} s com música (deixe esta tela aberta e visível) e publica no Instagram assim que terminar.`)) return;
+      s._pubDepois = true; bv.click(); return;
+    }
+  }
   const st = await postadorStatus();
   if (!st || st.logado === false) {
     modal({ title: !st ? 'Postador desligado' : 'Entre no Instagram', body: `<div class="ig-box">${igBoxHTML(st)}</div><p class="hint" style="margin-top:14px">Ou use “Baixar imagem” e “Copiar legenda” e publique pelo Instagram.</p>`, onOpen: refreshIg });
     return;
   }
   if (st.ocupado === 'login') { toast('Termine o login na janela do Instagram primeiro.'); return; }
-  if (!confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\nOração do dia: “${o.t}” — ${video ? `Reel de ${s.dur} s com música` : `${OR_ESTILOS[s.estilo][0]}, ${OR_FORMATOS[s.formato][2]}`}.`)) return;
+  if (!jaConfirmado && !confirm(`Publicar agora no Instagram${st.usuario ? ' (@' + st.usuario + ')' : ''}?\n\nOração do dia: “${o.t}” — ${video ? `Reel de ${s.dur} s com música` : `${OR_ESTILOS[s.estilo][0]}, ${OR_FORMATOS[s.formato][2]}`}.`)) return;
   btn.disabled = true;
   try {
     const midia = video
