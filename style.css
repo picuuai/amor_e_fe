@@ -216,6 +216,8 @@ textarea{min-height:70px;resize:vertical}
 .rows .row{display:grid;grid-template-columns:1fr 80px 100px 36px;gap:8px;align-items:center;margin-bottom:8px}
 .rows.ficha .row{grid-template-columns:1fr 72px 104px 36px}
 @media (max-width:480px){.rows.ficha .row{grid-template-columns:1fr 58px 84px 30px;gap:6px}.rows.ficha .unit{font-size:12px}}
+.rows.ficha .row.item{grid-template-columns:1fr 64px 110px 36px}
+@media (max-width:480px){.rows.ficha .row.item{grid-template-columns:1fr 50px 84px 30px}}
 .rows .row input,.rows .row select{margin-top:0}
 .rows .row .unit{font-size:13px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .rows:empty::before{content:"Nenhum item ainda — toque em um terço acima.";display:block;color:var(--muted);font-size:14px;padding:6px 0 10px}

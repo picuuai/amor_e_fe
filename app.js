@@ -502,12 +502,13 @@ function viewVendas() {
   }).join('') : empty('bag', 'Nenhuma venda encontrada', 'Mude o mês ou o filtro, ou registre uma nova venda.')}</div>`;
 }
 
-function itemRow(it = {}) {
+// itens da venda: igual aos materiais do terço — a última linha fica em branco com "+" (vira lixeira e abre outra)
+function itemRow(it = {}, ultima = false) {
   return `<div class="row item">
-    <select name="produtoId" aria-label="Produto"><option value="">Produto…</option>${opts(produtosOrd(), it.produtoId)}</select>
+    <select name="produtoId" aria-label="Terço"><option value="">Terço…</option>${opts(produtosOrd(), it.produtoId)}</select>
     <input name="qtd" inputmode="decimal" placeholder="Qtd" aria-label="Quantidade" value="${iv(it.qtd ?? 1)}">
-    <input name="preco" class="money" inputmode="numeric" placeholder="Preço" aria-label="Preço" value="${mv(it.preco ?? '')}">
-    <button type="button" class="rm" data-f="rm" aria-label="Remover">${ic('trash')}</button></div>`;
+    <input name="preco" class="money" inputmode="numeric" placeholder="Preço" aria-label="Preço" value="${it.preco ? mv(it.preco) : ''}">
+    ${fichaBtn(ultima)}</div>`;
 }
 function formVenda(v) {
   const novo = !v;
@@ -522,10 +523,8 @@ function formVenda(v) {
         <label>Cliente<input name="cliente" list="dlCli" value="${esc(nomeCliente(v.clienteId))}" placeholder="Nome (novo ou existente)"></label>
       </div>
       <datalist id="dlCli">${db.clientes.map(c => `<option value="${esc(c.nome)}">`).join('')}</datalist>
-      <div class="sec" style="margin-top:4px">Toque para adicionar</div>
-      <div class="picks">${produtosOrd().map(p => `<button type="button" class="pick" data-f="pick" data-id="${p.id}">${foto(p)}<span class="pick-n">${esc(p.nome)}</span><span class="pick-p">${brl(p.preco)}</span>${comEstoque() ? `<span class="pick-e">${fmt(estoqueProduto(p.id))} em estoque</span>` : ''}</button>`).join('')}</div>
-      <div class="sec">Itens da venda</div>
-      <div class="rows" id="itens">${v.itens.map(itemRow).join('')}</div>
+      <div class="sec" style="margin-top:4px">Terços vendidos <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">· terço, quantidade e preço de cada um</span></div>
+      <div class="rows ficha" id="itens">${v.itens.map(i => itemRow(i)).join('')}${itemRow({}, true)}</div>
       <div class="g3" style="margin-top:14px">
         <label>Desconto (R$)<input name="desconto" class="money" inputmode="numeric" value="${mv(v.desconto)}"></label>
         <label>Forma de pagamento<select name="pagamento">${pagOpts.map(p => `<option ${p === v.pagamento ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
@@ -555,15 +554,21 @@ function formVenda(v) {
         }
         upd();
       });
+      // Enter na quantidade ou no preço = tocar no "+"
+      root.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' || !['qtd', 'preco'].includes(e.target.name) || !e.target.closest('#itens')) return;
+        e.preventDefault(); e.target.closest('.row').querySelector('[data-f=add]')?.click();
+      });
       root.addEventListener('click', e => {
         const t = e.target.closest('[data-f]'); if (!t) return;
         if (t.dataset.f === 'rm') { t.closest('.row').remove(); upd(); }
-        if (t.dataset.f === 'pick') {
-          const p = get('produtos', t.dataset.id);
-          const ex = $$('.item', root).find(r => F(r, 'produtoId') === p.id);
-          if (ex) { const q = ex.querySelector('[name=qtd]'); q.value = iv(pn(q.value) + 1); }
-          else $('#itens', root).insertAdjacentHTML('beforeend', itemRow({ produtoId: p.id, qtd: 1, preco: p.preco }));
-          upd();
+        if (t.dataset.f === 'add') {
+          const r = t.closest('.row');
+          if (!F(r, 'produtoId')) { toast('Escolha o terço.'); r.querySelector('[name=produtoId]').focus(); return; }
+          if (!(pn(F(r, 'qtd')) > 0)) { toast('Informe a quantidade.'); r.querySelector('[name=qtd]').focus(); return; }
+          t.outerHTML = fichaBtn(false);
+          $('#itens', root).insertAdjacentHTML('beforeend', itemRow({}, true));
+          $('#itens .row:last-child [name=produtoId]', root).focus(); upd();
         }
       });
       upd();
@@ -741,7 +746,7 @@ function viewProdutos() {
 }
 const optsMateriais = sel => `<option value="">Material…</option>${opts(insumosOrd(), sel)}<option value="__novo">+ Cadastrar material novo…</option>`;
 // a última linha fica sempre em branco, com o botão "+": ao tocar, ela vira uma linha com lixeira e abre outra abaixo
-const fichaBtn = ultima => ultima ? `<button type="button" class="rm add" data-f="add" aria-label="Adicionar material">${ic('plus')}</button>`
+const fichaBtn = ultima => ultima ? `<button type="button" class="rm add" data-f="add" aria-label="Adicionar">${ic('plus')}</button>`
   : `<button type="button" class="rm" data-f="rm" aria-label="Remover">${ic('trash')}</button>`;
 const fichaRows = ficha => ficha.map(f => fichaRow(f)).join('') + fichaRow({}, true);
 function fichaRow(f = {}, ultima = false) {
